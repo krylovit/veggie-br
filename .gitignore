@@ -1,0 +1,5 @@
+node_modules/
+.playwright-mcp/
+assets/models/kenney_blaster-kit_2.1/
+*.log
+Thumbs.db
