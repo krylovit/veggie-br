@@ -36,7 +36,8 @@ export function createHud() {
       $('hpfill').style.background = hpPct > 0.5 ? '#4fd35a' : hpPct > 0.25 ? '#e8c53a' : '#e23b2e';
 
       const aliveBots = state.bots.filter((b) => b.alive).length;
-      $('alive').textContent = `Живых: ${aliveBots + (p.alive ? 1 : 0)}`;
+      const aliveHumans = state.humans.filter((h) => h.alive && h !== p).length;
+      $('alive').textContent = `Живых: ${aliveBots + aliveHumans + (p.alive ? 1 : 0)}`;
       $('kills').textContent = `Фраги: ${state.stats.kills} · Жизни: ${'♥'.repeat(Math.max(0, p.lives))}`;
       const zc = CONFIG.zone;
       const shrinking = state.time > zc.shrinkDelay;
@@ -57,7 +58,7 @@ export function createHud() {
         : `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp}`;
       let nearBin = false;
       if (p.alive && !p.binned && !p.onBalcony) {
-        for (const b of state.bots) {
+        for (const b of state.humans.concat(state.bots)) {
           if (b.binned && distXZ(p.pos, b.pos) < CONFIG.bin.kickRange) { nearBin = true; break; }
         }
       }

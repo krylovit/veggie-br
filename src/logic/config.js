@@ -131,6 +131,12 @@ export const CONFIG = {
     dpsStart: 4,
     dpsEnd: 18,
   },
+  lobby: {
+    slots: 11,          // humans + bots total; bots fill the rest
+    startDelay: 60,     // match starts N seconds after the first player joins
+    snapHz: 12,         // host -> clients snapshot rate
+    inputHz: 30,        // client -> host input rate
+  },
   bots: {
     count: 10,
     maxHp: 100,

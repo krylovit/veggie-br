@@ -57,6 +57,30 @@
     opacity: 0; transition: opacity .35s; }
   #zoneflash { position: fixed; inset: 0; z-index: 8; pointer-events: none;
     box-shadow: inset 0 0 120px rgba(255,40,40,.5); opacity: 0; transition: opacity .5s; }
+
+  #lobby { position: fixed; inset: 0; z-index: 30; display: flex;
+    align-items: center; justify-content: center;
+    background: rgba(5,10,5,.82); color: #fff; user-select: none; }
+  #lobby.hidden { display: none; }
+  #lobby .panel { background: rgba(10,16,10,.92); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 14px; padding: 28px 34px; width: 320px; text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+  #lobby h1 { margin: 0 0 18px; font-size: 26px; letter-spacing: 1px; }
+  #lobby input { display: block; width: 100%; box-sizing: border-box;
+    margin: 8px 0; padding: 10px 12px; font-size: 15px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.4);
+    color: #fff; outline: none; }
+  #lobby input:focus { border-color: #ffd84d; }
+  #lobby button { display: block; width: 100%; margin: 10px 0 0;
+    padding: 11px 0; font-size: 15px; font-weight: 700; border: 0;
+    border-radius: 8px; cursor: pointer; }
+  #lobby button.primary { background: #4fd35a; color: #062; }
+  #lobby button.ghost { background: rgba(255,255,255,.12); color: #fff; }
+  #lobby button:hover { filter: brightness(1.1); }
+  #lobbyInfo { margin-top: 14px; font-size: 13px; line-height: 1.6;
+    min-height: 20px; opacity: .9; }
+  #lobbyInfo .roster { color: #ffd84d; }
+  #lobbyInfo .countdown { font-size: 22px; font-weight: 800; color: #aef78e; }
 </style>
 <script type="importmap">
   { "imports": { "three": "./vendor/three.module.js" } }
@@ -84,6 +108,17 @@
     <div style="position:absolute;left:50%;top:50%;width:52vmin;height:1px;background:rgba(255,255,255,.4);transform:translate(-50%,-50%);"></div>
   </div>
   <div id="msg" class="hud"></div>
+
+  <div id="lobby">
+    <div class="panel">
+      <h1>ОВОЩНАЯ БИТВА</h1>
+      <input id="nick" placeholder="ник" maxlength="14" autocomplete="off">
+      <input id="room" placeholder="код комнаты" maxlength="8" autocomplete="off">
+      <button id="joinBtn" class="primary">В лобби</button>
+      <button id="soloBtn" class="ghost">Одиночная игра</button>
+      <div id="lobbyInfo"></div>
+    </div>
+  </div>
 
   <script type="module" src="./src/view/main.js"></script>
 </body>

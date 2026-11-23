@@ -18,9 +18,9 @@ export function stickVeggie(state, ent, veggie, attackerId, weight = 1) {
     target: ent.id,
     veggie,
     vegCount: ent.vegCount,
-    byPlayer: attackerId === 'player',
+    byPlayer: attackerId === state.player.id,
   });
-  if (attackerId === 'player') state.stats.damageDealt++;
+  if (attackerId === state.player.id) state.stats.damageDealt++;
   if (ent.vegCount >= CONFIG.bin.hits) {
     const kind = CONFIG.junk.order.includes(veggie) ? 'toast' : 'veg';
     transformToBin(state, ent, attackerId, kind);
@@ -35,7 +35,7 @@ function transformToBin(state, ent, attackerId, kind) {
   ent.vel = v3();                     // gravity may still settle the bin
   state.events.push({
     type: 'binned', target: ent.id, name: ent.name, kind,
-    pos: copy(ent.pos), byPlayer: attackerId === 'player',
+    pos: copy(ent.pos), byPlayer: attackerId === state.player.id,
   });
 }
 
@@ -61,7 +61,7 @@ export function nearestBin(state, from, range) {
     const d = distXZ(from.pos, e.pos);
     if (d < bd) { bd = d; best = e; }
   };
-  consider(state.player);
+  for (const e of state.humans) consider(e);
   for (const b of state.bots) consider(b);
   return best;
 }
@@ -74,14 +74,14 @@ export function tryKick(state, kicker) {
 }
 
 export function kickBin(state, kicker, binEnt) {
-  if (kicker.id === 'player') state.stats.kills++;
+  if (kicker === state.player) state.stats.kills++;
   const dir = norm({ x: binEnt.pos.x - kicker.pos.x, y: 0, z: binEnt.pos.z - kicker.pos.z });
   const d = Math.hypot(dir.x, dir.z) < 1e-4 ? { x: 1, y: 0, z: 0 } : dir;
   state.events.push({
     type: 'binKicked', victim: binEnt.id, name: binEnt.name,
     attacker: kicker.id, pos: copy(binEnt.pos), dir: d,
     kind: binEnt.binKind || 'veg',
-    byPlayer: kicker.id === 'player',
+    byPlayer: kicker === state.player,
   });
   if (binEnt.binKind === 'toast') spawnToasts(state, binEnt.pos);
   killEntity(state, binEnt);
@@ -127,7 +127,7 @@ export function killEntity(state, ent) {
   // least-occupied platform wins — pure rand kept stacking the crowd
   // onto one arc while the others sat empty
   const counts = new Array(CONFIG.balcony.platforms).fill(0);
-  for (const e of [state.player, ...state.bots]) {
+  for (const e of state.humans.concat(state.bots)) {
     if (e !== ent && e.onBalcony) counts[e.balconyP]++;
   }
   ent.balconyP = counts.indexOf(Math.min(...counts));
@@ -163,6 +163,6 @@ export function slimeHit(state, ent, attackerId) {
   state.events.push({
     type: 'slimed', target: ent.id, name: ent.name,
     pos: add(ent.pos, { x: 0, y: 1, z: 0 }),
-    byPlayer: attackerId === 'player',
+    byPlayer: attackerId === state.player.id,
   });
 }

@@ -555,6 +555,26 @@ export function createView(container) {
     return BOT_COLORS[n % BOT_COLORS.length];
   }
 
+  // Floating name tag over a human player (canvas sprite, always faces cam)
+  function makeNameSprite(name) {
+    const cnv = document.createElement('canvas');
+    cnv.width = 256; cnv.height = 56;
+    const ctx = cnv.getContext('2d');
+    ctx.font = 'bold 34px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(0,0,0,.85)';
+    ctx.lineWidth = 7;
+    ctx.strokeText(name, 128, 40);
+    ctx.fillStyle = '#ffd84d';
+    ctx.fillText(name, 128, 40);
+    const tex = new THREE.CanvasTexture(cnv);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    sp.scale.set(2.4, 0.52, 1);
+    sp.position.y = 2.25;
+    sp.renderOrder = 5;
+    return sp;
+  }
+
   function spawnEffect(pos, color, ttl, grow, size, rise = 0) {
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(size, 10, 8),
@@ -575,7 +595,8 @@ export function createView(container) {
     }
     let g = entities.get(e.id);
     if (!g) {
-      g = makeEntityMesh(e.id, botColor(e.id));
+      g = makeEntityMesh(e.id, e.bot ? botColor(e.id) : 0x7ec9ff);
+      if (!e.bot) g.add(makeNameSprite(e.name || 'игрок'));
       entities.set(e.id, g);
     }
     g.position.set(e.pos.x, e.pos.y, e.pos.z);
@@ -704,10 +725,15 @@ export function createView(container) {
     canvas: renderer.domElement,
 
     sync(state, aim, dtReal) {
-      // player is first-person — no self mesh; bots get capsules
-      const pg = entities.get('player');
-      if (pg) { scene.remove(pg); entities.delete('player'); }
-      for (const b of state.bots) syncEntity(b, 0, state.time);
+      // player is first-person — no self mesh; everyone else gets capsules
+      for (const e of state.humans.concat(state.bots)) {
+        if (e === state.player) {
+          const pg = entities.get(e.id);
+          if (pg) { scene.remove(pg); entities.delete(e.id); }
+          continue;
+        }
+        syncEntity(e, 0, state.time);
+      }
 
       syncBalcony(state);
 

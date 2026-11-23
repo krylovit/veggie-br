@@ -6,9 +6,9 @@ import { rand, randRange } from './rng.js';
 import { makeWeapon, fire } from './weapon.js';
 import { nearestBin, kickBin } from './bin.js';
 
-export function makeBots(state) {
+export function makeBots(state, count) {
   const bots = [];
-  const n = CONFIG.bots.count;
+  const n = count ?? CONFIG.bots.count;
   const inObstacle = (x, z) =>
     state.obstacles.some(
       (o) => x > o.min.x - 1 && x < o.max.x + 1 && z > o.min.z - 1 && z < o.max.z + 1
@@ -82,11 +82,11 @@ function nearestEnemy(bot, state) {
   let bd = Infinity;
   const consider = (e) => {
     if (!e.alive || e.binned || e.onBalcony || e === bot) return;
-    if (e.id === 'player' && !state.playerEngaged) return;
+    if (!e.bot && !e.engaged) return;
     const d = distXZ(bot.pos, e.pos);
     if (d < bd) { bd = d; best = e; }
   };
-  consider(state.player);
+  for (const b of state.humans) consider(b);
   for (const b of state.bots) consider(b);
   return bd < CONFIG.bots.aggroRange * 1.5 ? best : null;
 }

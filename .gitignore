@@ -3,3 +3,4 @@ node_modules/
 assets/models/kenney_blaster-kit_2.1/
 *.log
 Thumbs.db
+__pycache__/

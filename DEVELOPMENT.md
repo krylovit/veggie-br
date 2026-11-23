@@ -77,3 +77,17 @@ GLB грузятся через `vendor/loaders/GLTFLoader.js`; если фай�
 Слой `src/logic/` спроектирован под перенос на Luau: векторы-плоские таблицы,
 никакого three.js, фиксированный шаг, события в `state.events` — вью их
 отыгрывает. См. `.devin/skills/roblox-luau-port/SKILL.md`.
+
+## Мультиплеер (lobby)
+
+- Релей `server/lobby_server.py`: комнаты по коду, host = первый зашедший,
+  старт через LOBBY_SECONDS (env, деф. 60) с первого игрока, релей
+  input→host / snap→всем, host-миграция, peerLeft.
+- `src/net/net.js` — host-authoritative: хост гоняет step() со всеми
+  ботами и remote-энтити (их вход приходит пакетами, edge-флаги OR'ятся),
+  шлёт снапшоты 12 Гц; клиент симулирует только своего игрока +
+  применяет снапшоты (мягкая коррекция позиции, снаряды мёржатся по id).
+- state.netRole: 'solo' | 'host' | 'client'. В client-режиме step()
+  пропускает ботов/зону/фазу — всё приходит снапшотами.
+- Автозапуск на сервере: crontab ktulhu (@reboot + */5 watchdog).
+  Лог: /home/ktulhu/veggie-lobby/lobby.log.

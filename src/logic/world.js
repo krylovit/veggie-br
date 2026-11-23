@@ -9,12 +9,18 @@ import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
-export function createState() {
+// opts: {seed, humans:[{id,name}], myId, netRole} — defaults give the
+// classic solo match (one local player + bots).
+export function createState(opts = {}) {
+  const humans = opts.humans ?? [{ id: 'player', name: 'Вы' }];
+  const myId = opts.myId ?? humans[0].id;
   const state = {
     time: 0,
     phase: 'playing',        // 'playing' | 'won' | 'lost'
     nextId: 1,
-    rngState: CONFIG.world.seed,
+    rngState: opts.seed ?? CONFIG.world.seed,
+    netRole: opts.netRole ?? 'solo',   // 'solo' | 'host' | 'client'
+    myNetId: myId,
     playerEngaged: false,    // bots ignore the player until first pointer lock
     zone: {
       cx: CONFIG.zone.cx, cz: CONFIG.zone.cz,
@@ -25,42 +31,70 @@ export function createState() {
     pickups: [],             // toast slices popped out of kicked toasters
     events: [],              // drained by the view each frame
     stats: { kills: 0, shots: 0, damageDealt: 0 },
-    player: {
-      id: 'player', bot: false, name: 'Вы',
-      pos: v3(CONFIG.player.spawn.x, CONFIG.drop.height, CONFIG.player.spawn.z),
-      vel: v3(),
-      yaw: CONFIG.player.spawnYaw,
-      hp: CONFIG.player.maxHp,
-      alive: true,
-      chute: true,             // dropping in under an underwear parachute
-      chutePhase: 0,
-      binned: false,
-      binKind: null,        // 'veg' bin | 'toast' toaster
-      binTimer: 0,
-      vegCount: 0,
-      vegStuck: [],
-      lives: CONFIG.lives,
-      onBalcony: false,
-      balconyTimer: 0,
-      balconyP: 0,           // which arc platform of the ring
-      balconyA: 0,
-      balconyR: -2,
-      slimedTimer: 0,
-      mounted: null,           // balcony cannon index when manning a gun
-      onGround: false,
-      weapon: makeWeapon(),
-      weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie gun, [1] junk gun
-      slot: 0,
-    },
+    humans: [],
+    player: null,
     bots: [],
     obstacles: [],          // AABB collision parts (1m-grid aligned)
     voxels: [],             // unit cubes {x,y,z,mat} — centers at cell+0.5
   };
+  humans.forEach((h, i) => {
+    const e = makeHuman(state, h.id, h.name, i, humans.length);
+    e.remote = h.id !== myId;
+    e.snapDriven = e.remote && state.netRole === 'client';
+    state.humans.push(e);
+    if (h.id === myId) state.player = e;
+  });
+  if (!state.player) { state.player = state.humans[0]; state.player.remote = false; }
   const map = buildMap(state);
   state.obstacles = map.obstacles;
   state.voxels = map.voxels;
-  state.bots = makeBots(state);
+  state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));
+  // stable net ordering: humans first (join order), then bots
+  state.netEnts = [...state.humans, ...state.bots];
+  state.netEnts.forEach((e, i) => { e.netIdx = i; });
   return state;
+}
+
+// Every entity the sim knows about — humans (local + remote) and bots.
+export function allEntities(state) {
+  return state.humans.concat(state.bots);
+}
+
+function makeHuman(state, id, name, i, n) {
+  // humans parachute in on a ring around the spawn point — same seed
+  // gives every client the same drop positions
+  const a = (i / Math.max(1, n)) * Math.PI * 2 + rand(state) * 0.5;
+  const r = n === 1 ? 0 : 10 + rand(state) * 25;
+  return {
+    id, bot: false, remote: false, snapDriven: false, engaged: false,
+    netInput: null,
+    name,
+    pos: v3(CONFIG.player.spawn.x + Math.cos(a) * r, CONFIG.drop.height,
+            CONFIG.player.spawn.z + Math.sin(a) * r),
+    vel: v3(),
+    yaw: CONFIG.player.spawnYaw,
+    hp: CONFIG.player.maxHp,
+    alive: true,
+    chute: true,             // dropping in under an underwear parachute
+    chutePhase: rand(state) * Math.PI * 2,
+    binned: false,
+    binKind: null,        // 'veg' bin | 'toast' toaster
+    binTimer: 0,
+    vegCount: 0,
+    vegStuck: [],
+    lives: CONFIG.lives,
+    onBalcony: false,
+    balconyTimer: 0,
+    balconyP: 0,           // which arc platform of the ring
+    balconyA: 0,
+    balconyR: -2,
+    slimedTimer: 0,
+    mounted: null,           // balcony cannon index when manning a gun
+    onGround: false,
+    weapon: makeWeapon(),
+    weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie gun, [1] junk gun
+    slot: 0,
+  };
 }
 
 // The map is built entirely of 1 m cubes on an integer grid — like
@@ -198,33 +232,49 @@ function buildMap(state) {
 }
 
 // input: {mx, mz, jump, sprint, fire, kick, aim:{x,y,z}, active}
+const EMPTY_INPUT = { mx: 0, mz: 0, jump: false, sprint: false, fire: false, interact: false, aim: null, slotSel: null, slotCycle: 0, active: false };
+
 export function step(state, input, dt) {
   if (state.phase !== 'playing') return state;
   state.time += dt;
-  if (input.active) state.playerEngaged = true;
+  if (input.active) { state.playerEngaged = true; state.player.engaged = true; }
 
-  stepPlayer(state, input, dt);
-  for (const b of state.bots) {
-    if (b.binned) {
-      tickBin(state, b, dt);
-      integrate(b, dt, state);   // bins still settle onto the ground
-    } else if (b.slimedTimer > 0) {
-      b.slimedTimer -= dt;       // glued mid-air — frozen where hit
-    } else if (!b.onBalcony) {
-      stepBot(b, state, dt);
-      integrate(b, dt, state);
+  const client = state.netRole === 'client';
+  stepHuman(state, state.player, input, dt);
+  if (!client) {
+    // host/solo: remote humans are stepped by their last received input
+    for (const h of state.humans) {
+      if (h === state.player) continue;
+      const inp = h.netInput || EMPTY_INPUT;
+      if (inp.active) h.engaged = true;
+      stepHuman(state, h, inp, dt);
+    }
+    for (const b of state.bots) {
+      if (b.binned) {
+        tickBin(state, b, dt);
+        integrate(b, dt, state);   // bins still settle onto the ground
+      } else if (b.slimedTimer > 0) {
+        b.slimedTimer -= dt;       // glued mid-air — frozen where hit
+      } else if (!b.onBalcony) {
+        stepBot(b, state, dt);
+        integrate(b, dt, state);
+      }
     }
   }
   stepBalcony(state, dt);
   stepProjectiles(state, dt);
-  stepPickups(state, dt);
-  stepZone(state, dt);
-  checkPhase(state);
+  if (!client) {
+    stepPickups(state, dt);
+    stepZone(state, dt);
+    checkPhase(state);
+  } else {
+    // clients only animate pickups — the host decides who ate them
+    stepPickupMotion(state, dt);
+  }
   return state;
 }
 
-function stepPlayer(state, input, dt) {
-  const p = state.player;
+function stepHuman(state, p, input, dt) {
   if (!p.alive) return;
   if (p.binned) {
     tickBin(state, p, dt);
@@ -247,7 +297,7 @@ function stepPlayer(state, input, dt) {
     tickCooldowns(p, dt);
     if (input.fire) {
       const shot = fire(state, p, input.aim);
-      if (shot) state.stats.shots++;
+      if (shot && p === state.player) state.stats.shots++;
     }
     return;
   }
@@ -264,7 +314,7 @@ function stepPlayer(state, input, dt) {
   tickCooldowns(p, dt);
   if (input.fire) {
     const shot = fire(state, p, input.aim);
-    if (shot) state.stats.shots++;
+    if (shot && p === state.player) state.stats.shots++;
   }
   if (input.interact) tryKick(state, p);
   integrate(p, dt, state);
@@ -312,6 +362,7 @@ function stepPlayerBalcony(state, p, input, dt) {
       // face the arena on mount — the view snaps the camera on this event
       state.events.push({
         type: 'mountedCannon',
+        target: p.id,
         angle: platformAngle(state, c.p, bc.cannons[c.c]),
       });
     }
@@ -355,9 +406,7 @@ function nearestCannon(state, p) {
 }
 
 function cannonTaken(state, pi, ci, except) {
-  if (state.player !== except &&
-      state.player.mounted && state.player.mounted.p === pi && state.player.mounted.c === ci) return true;
-  for (const b of state.bots) {
+  for (const b of allEntities(state)) {
     if (b === except) continue;
     if (b.mounted && b.mounted.p === pi && b.mounted.c === ci) return true;
   }
@@ -401,8 +450,7 @@ function nearestGroundEnemy(bot, state) {
     const d = distXZ(bot.pos, e.pos);
     if (d < bd) { bd = d; best = e; }
   };
-  consider(state.player);
-  for (const b of state.bots) consider(b);
+  for (const e of allEntities(state)) consider(e);
   return best;
 }
 
@@ -433,8 +481,15 @@ function stepBalcony(state, dt) {
     e.pos.y = CONFIG.balcony.height;
     e.vel = v3();
   };
-  if (state.player.onBalcony) ride(state.player, false);
-  for (const bot of state.bots) if (bot.onBalcony) ride(bot, true);
+  if (state.netRole === 'client') {
+    // snapshot-driven entities get their balcony positions from the host —
+    // only the local player rides (and redeploys) predictively
+    if (state.player.onBalcony) ride(state.player, false);
+    return;
+  }
+  for (const e of allEntities(state)) {
+    if (e.onBalcony) ride(e, e.bot);
+  }
 }
 
 // Shared gravity/floor/bounds/obstacle integration for every entity.
@@ -523,17 +578,18 @@ function floorHeight(e, state, prevY) {
 }
 
 function forEachTarget(state, ownerId, fn) {
-  const p = state.player;
-  if (p.alive && !p.binned && !p.onBalcony && p.id !== ownerId) fn(p);
-  for (const b of state.bots) {
-    if (b.alive && !b.binned && !b.onBalcony && b.id !== ownerId) fn(b);
+  for (const e of allEntities(state)) {
+    if (e.alive && !e.binned && !e.onBalcony && e.id !== ownerId) fn(e);
   }
 }
 
 function stepProjectiles(state, dt) {
   const cfg = CONFIG.weapon;
+  const client = state.netRole === 'client';
   const remaining = [];
   for (const p of state.projectiles) {
+    if (p.net) { remaining.push(p); continue; }   // snapshot-driven on clients
+    p.la = (p.la || 0) + dt;                      // local age — net merge window
     p.prev = copy(p.pos);
     p.vel.y -= (p.gravity ?? cfg.gravity) * dt;
     p.pos.x += p.vel.x * dt;
@@ -547,7 +603,7 @@ function stepProjectiles(state, dt) {
       if (h && (!hit || h.t < hit.t)) hit = { t: h.t, point: h.point, kind, ent };
     };
     forEachTarget(state, p.owner, (e) => {
-      if (e.id === 'player' && !state.playerEngaged) return;
+      if (!e.bot && !e.engaged) return;
       const c = add(e.pos, { x: 0, y: CONFIG.player.hitCenterY, z: 0 });
       consider(segmentSphere(p.prev, p.pos, c, CONFIG.player.hitRadius + (p.radius ?? cfg.radius)), 'entity', e);
     });
@@ -572,9 +628,9 @@ function stepProjectiles(state, dt) {
 
 // Toast slices popped from kicked toasters: fall, settle, heal whoever
 // touches them (only when they can actually use the HP).
-function stepPickups(state, dt) {
-  const cfg = CONFIG.toaster;
-  const keep = [];
+// Pickup physics only — shared between authoritative sim and clients
+// (clients animate slices but never decide who ate them).
+function stepPickupMotion(state, dt) {
   for (const p of state.pickups) {
     p.ttl -= dt;
     p.vel.y -= 20 * dt;
@@ -585,6 +641,15 @@ function stepPickups(state, dt) {
       p.pos.y = 0.18;
       p.vel = { x: 0, y: 0, z: 0 };   // settled on the grass
     }
+  }
+  state.pickups = state.pickups.filter((p) => p.ttl > 0);
+}
+
+function stepPickups(state, dt) {
+  const cfg = CONFIG.toaster;
+  stepPickupMotion(state, dt);
+  const keep = [];
+  for (const p of state.pickups) {
     const settled = p.vel.x === 0 && p.vel.y === 0 && p.vel.z === 0;
     if (!settled) { if (p.ttl > 0) keep.push(p); continue; }
     let eaten = false;
@@ -598,29 +663,29 @@ function stepPickups(state, dt) {
         state.events.push({
           type: 'heal', target: e.id, name: e.name, amount: cfg.heal,
           pos: { x: p.pos.x, y: p.pos.y + 0.4, z: p.pos.z },
-          byPlayer: e.id === 'player',
+          byPlayer: e === state.player,
         });
       }
     });
-    if (!eaten && p.ttl > 0) keep.push(p);
+    if (!eaten) keep.push(p);
   }
   state.pickups = keep;
 }
 
 export function damage(state, ent, amount, attackerId, veggie) {
   if (!ent.alive || ent.binned) return;
-  if (ent.id === 'player' && !state.playerEngaged) return;
+  if (!ent.bot && !ent.engaged) return;
   ent.hp -= amount;
   state.events.push({
     type: 'hit',
     pos: add(ent.pos, { x: 0, y: 1.2, z: 0 }),
     target: ent.id,
     veggie: veggie || null,
-    byPlayer: attackerId === 'player',
+    byPlayer: attackerId === state.player.id,
   });
   if (ent.hp <= 0) {
     ent.hp = 0;
-    if (attackerId === 'player') state.stats.kills++;
+    if (attackerId === state.player.id) state.stats.kills++;
     state.events.push({ type: 'kill', victim: ent.id, attacker: attackerId, name: ent.name, veggie: veggie || null });
     killEntity(state, ent);
   }
@@ -634,19 +699,18 @@ function stepZone(state, dt) {
   const center = { x: state.zone.cx, y: 0, z: state.zone.cz };
   const burn = (e) => {
     if (!e.alive || e.binned || e.onBalcony) return;
-    if (e.id === 'player' && !state.playerEngaged) return;
+    if (!e.bot && !e.engaged) return;
     if (distXZ(e.pos, center) > state.zone.radius) {
       damage(state, e, state.zone.dps * dt, 'zone');
     }
   };
-  burn(state.player);
-  for (const b of state.bots) burn(b);
+  for (const e of allEntities(state)) burn(e);
 }
 
 function checkPhase(state) {
   let next = null;
   if (!state.player.alive) next = 'lost';
-  else if (state.bots.every((b) => !b.alive)) next = 'won';
+  else if (allEntities(state).every((e) => e === state.player || !e.alive)) next = 'won';
   if (next) {
     state.phase = next;
     state.events.push({ type: 'phase', phase: next });
