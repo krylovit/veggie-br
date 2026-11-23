@@ -266,3 +266,21 @@
   просадка ~0.2 м на 50 м, попадает в перекрестье.
 - ВАЖНО: при проверке видел, что браузер отдаёт старые модули из кэша
   (fireSlime.length===3). Для подхвата правок нужен Ctrl+F5.
+
+## 23 ноя — выкладка: GitHub + сервер, vendor-защита
+
+- three.js завендорен в `vendor/` (three.module.js + three.core.js +
+  GLTFLoader + BufferGeometryUtils). Игра — чистая статика, node_modules
+  не нужен, сборки нет.
+- GitHub: репо `krylovit/veggie-br`, ветка main, первый коммит 7eb4c09.
+  .gitignore: node_modules, .playwright-mcp, kenney-кит (211 файлов,
+  в рантайме не нужен — только 2 GLB + colormap.png).
+- GitHub Pages: https://krylovit.github.io/veggie-br/ — статус built,
+  игра запускается (advanceTime/render_game_to_text проверены вживую).
+- Сервер .57: залито в `/mnt/ton-data/test3dweb/veggie/` (mkdir прав хватило
+  без sudo — test3dweb принадлежит ktulhu). Отдаётся как
+  `https://kapitanpiho.duckdns.org/game3d/veggie/` — curl 200 на index/three/glb.
+  kenney-кит с сервера удалён (2.4M итого).
+- Доступы задокументированы в `deploy/ACCESS.md` (SSH 48133, GCM-креды
+  GitHub, грабли с кириллицей и sudo).
+- favicon: inline SVG (баклажан) — убит 404 в консоли.
