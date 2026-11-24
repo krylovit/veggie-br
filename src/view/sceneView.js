@@ -653,7 +653,67 @@ export function createView(container) {
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return g;
   }
+
+  // Ferris wheel: steel A-frame + a slow-spinning rim with hanging
+  // gondolas that counter-rotate so they always stay level.
+  function makeFerris() {
+    const g = new THREE.Group();
+    const steel = mat(0x5a6674, 0.55);
+    for (const s of [-1, 1]) {                        // A-legs splayed along the axle
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.45, 10.6, 0.45), steel);
+      leg.position.set(0, 5.0, s * 1.6);
+      leg.rotation.x = -s * 0.28;
+      g.add(leg);
+    }
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.35, 6.6), steel);
+    cross.position.y = 3.4;
+    g.add(cross);
+    const axle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.35, 4.2, 10).rotateX(Math.PI / 2), steel);
+    axle.position.y = 10;
+    g.add(axle);
+
+    const wheel = new THREE.Group();
+    wheel.position.y = 10;
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(8, 0.2, 6, 28), steel));
+    for (let i = 0; i < 8; i++) {                     // spokes
+      const t = (i / 8) * Math.PI * 2;
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 8, 0.16), steel);
+      sp.position.set(Math.cos(t) * 4, Math.sin(t) * 4, 0);
+      sp.rotation.z = t + Math.PI / 2;
+      wheel.add(sp);
+    }
+    const hub2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.8, 0.8, 0.6, 12).rotateX(Math.PI / 2),
+      mat(0xe8a030, 0.5));
+    wheel.add(hub2);
+    const cabs = [];
+    const cols = [0xe05252, 0xe8a030, 0x4fa0e0, 0x58c058];
+    for (let i = 0; i < 8; i++) {                     // gondolas on free pivots
+      const t = (i / 8) * Math.PI * 2;
+      const pivot = new THREE.Group();
+      pivot.position.set(Math.cos(t) * 8, Math.sin(t) * 8, 0);
+      const cab = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.1, 0.14), steel);
+      bar.position.y = -0.55;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.3, 1.5),
+        mat(cols[i % 4], 0.5));
+      body.position.y = -1.75;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.22, 1.7),
+        mat(0xf2f0e8, 0.6));
+      roof.position.y = -1.0;
+      cab.add(bar, body, roof);
+      pivot.add(cab);
+      wheel.add(pivot);
+      cabs.push(cab);
+    }
+    g.add(wheel);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return { g, wheel, cabs };
+  }
+
   let millRotor = null;   // built lazily once state.windmill is known
+  let ferris = null;      // {g, wheel, cabs} — built once state.ferris is known
 
   // The junk-bin: a big readable chrome toaster, two toasts sticking
   // out of the slots, red lever on the side. Same footprint as the bin.
@@ -1029,6 +1089,17 @@ export function createView(container) {
         scene.add(millRotor);
       }
       if (millRotor) millRotor.rotation.z += dtReal * 1.1;
+      // one-time: mount the ferris wheel; then keep it turning slowly,
+      // gondolas counter-rotate to hang level
+      if (!ferris && state.ferris) {
+        ferris = makeFerris();
+        ferris.g.position.set(state.ferris.x, 0, state.ferris.z);
+        scene.add(ferris.g);
+      }
+      if (ferris) {
+        ferris.wheel.rotation.z += dtReal * 0.12;
+        for (const cab of ferris.cabs) cab.rotation.z = -ferris.wheel.rotation.z;
+      }
       // player is first-person — no self mesh; everyone else gets capsules
       for (const e of state.humans.concat(state.bots, state.zombies || [])) {
         if (e === state.player) {

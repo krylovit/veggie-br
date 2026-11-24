@@ -201,24 +201,22 @@ export const CONFIG = {
     maxSpeed: 26,
     stationLen: 10,     // s-window around the station where brakes bite
     stationSpeed: 2.2,  // crawl through the platform — boarding window
-    // closed loop around the park: {x, z, h} waypoints, h = rail top
+    // closed loop around the park: {x, z, h} waypoints, h = rail top.
+    // Minecraft-style: every segment is straight or a clean 45° bevel.
     track: [
-      { x: 0,   z: -112, h: 2   },   // station
-      { x: 20,  z: -112, h: 2.4 },
-      { x: 30,  z: -114, h: 3   },
-      { x: 34,  z: -126, h: 5   },
-      { x: 34,  z: -145, h: 8   },
-      { x: 34,  z: -160, h: 10.5 },  // lift hill crest
-      { x: 30,  z: -167, h: 10.5 },
-      { x: 20,  z: -171, h: 9   },
-      { x: 0,   z: -172, h: 8.5 },
-      { x: -20, z: -170, h: 8   },
-      { x: -30, z: -166, h: 6   },
-      { x: -34, z: -158, h: 5   },
-      { x: -34, z: -140, h: 5.5 },   // camelback
-      { x: -34, z: -124, h: 3.5 },
-      { x: -30, z: -112, h: 2.6 },
-      { x: -20, z: -110, h: 2.2 },
+      { x: -10, z: -110, h: 2.0 },   // station straight
+      { x: 16,  z: -110, h: 2.3 },
+      { x: 20,  z: -114, h: 2.8 },   // 45° bevel
+      { x: 30,  z: -124, h: 4.5 },   // 45° diagonal climb
+      { x: 30,  z: -160, h: 10.5 },  // long straight lift — the crest
+      { x: 24,  z: -166, h: 10.3 },  // 45° bevel
+      { x: -24, z: -166, h: 6.5 },   // first drop heading west — straight
+      { x: -34, z: -156, h: 5.0 },   // 45° diagonal south-west
+      { x: -34, z: -138, h: 5.8 },   // south straight — camelback
+      { x: -34, z: -124, h: 3.8 },   // drop again
+      { x: -30, z: -120, h: 3.0 },   // 45° bevel
+      { x: -30, z: -114, h: 2.6 },   // straight south
+      { x: -26, z: -110, h: 2.2 },   // 45° bevel into the station
     ],
   },
   lobby: {

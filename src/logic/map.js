@@ -372,23 +372,9 @@ export function buildMap(state) {
     }
     paveRect(cx - 3, cz - 3, cx + 4, cz + 4, 'path');
   };
-  const ferris = (cx, cz) => {
-    box(cx - 2, 0, cz, cx - 1, 10, cz + 1, 'log');                  // A-legs
-    box(cx + 1, 0, cz, cx + 2, 10, cz + 1, 'log');
-    deco(cx - 1, 9, cz, cx + 1, 11, cz + 1, 'bin');                 // hub
-    for (let i = 0; i < 20; i++) {                                  // the wheel rim
-      const t = (i / 20) * Math.PI * 2;
-      deco(cx + Math.round(Math.cos(t) * 8), 10 + Math.round(Math.sin(t) * 8),
-           cz, cx + Math.round(Math.cos(t) * 8) + 1,
-           10 + Math.round(Math.sin(t) * 8) + 1, cz + 1, 'log');
-    }
-    for (let i = 0; i < 8; i++) {                                   // gondola cabins
-      const t = (i / 8) * Math.PI * 2 + 0.4;
-      const gx = cx + Math.round(Math.cos(t) * 8);
-      const gy = 10 + Math.round(Math.sin(t) * 8);
-      deco(gx, gy - 2, cz - 1, gx + 1, gy - 1, cz + 2, i % 2 ? 'sand' : 'leaf');
-    }
-  };
+  // Ferris wheel: only the mount point is exported — the wheel itself
+  // is a spinning mesh (sceneView), not scattered voxels.
+  let ferris = null;
   const park = (cx, cz) => {
     // perimeter: fence ring, road gates where the NS connector crosses
     const x0 = cx - 42, x1 = cx + 40, z0 = cz - 42, z1 = cz + 40;
@@ -401,19 +387,19 @@ export function buildMap(state) {
     // inside: main walk + the path to the coaster station
     paveRect(x0 + 3, cz - 2, x1 - 3, cz + 3, 'path');
     paveRect(cx - 2, cz + 3, cx + 3, cz + 28, 'path');
-    stall(cx - 34, cz + 6, 'brick');
-    stall(cx - 28, cz + 6, 'sand');
-    stall(cx - 22, cz + 6, 'leaf');
-    carousel(cx - 30, cz - 14);
-    ferris(cx + 26, cz + 33);   // south-east corner — clear of the rail loop
-    for (const [lx, lz] of [[-30, 0], [30, 0], [-10, 20], [10, 20]]) lamp(cx + lx, cz + lz);
-    for (const [bx, bz] of [[-14, 2], [12, 2], [-34, 14], [30, 14]]) bench(cx + bx, cz + bz);
+    stall(cx - 26, cz + 6, 'brick');
+    stall(cx - 20, cz + 6, 'sand');
+    stall(cx - 14, cz + 6, 'leaf');
+    carousel(cx - 24, cz - 16);
+    ferris = { x: cx - 30, z: cz + 34 };   // west side — wheel mesh mounts here
+    for (const [lx, lz] of [[-28, 0], [24, 0], [-10, 20], [10, 20]]) lamp(cx + lx, cz + lz);
+    for (const [bx, bz] of [[-20, 14], [24, 30], [-34, 34], [30, 34]]) bench(cx + bx, cz + bz);
     hedge(x0 + 2, cz + 8, x0 + 3, cz + 30);
     hedge(x1 - 3, cz + 8, x1 - 2, cz + 30);
-    // coaster station: raised platform beside the rail + a sign
-    box(cx - 8, 0, -112 + 1, cx + 12, 1, -112 + 3, 'stone');
-    box(cx + 12, 0, -112 + 2, cx + 13, 3, -112 + 3, 'log');     // sign post
-    deco(cx + 11, 3, -112 + 1, cx + 14, 5, -112 + 3, 'sand');   // sign board
+    // coaster station: raised platform along the station straight + sign
+    box(cx - 26, 0, -109, cx + 16, 1, -107, 'stone');
+    box(cx + 16, 0, -108, cx + 17, 3, -107, 'log');            // sign post
+    deco(cx + 15, 3, -109, cx + 18, 5, -106, 'sand');          // sign board
     // the coaster: proper rails — dark log ties with two thin metal
     // bars riding on top, on timber piers. Decorative, carts carry you.
     const tr = buildTrack();
@@ -444,20 +430,23 @@ export function buildMap(state) {
   }
 
   // Forest belt around the whole map edge — the world ends in woods.
+  const inPark = (x, z) => x > -48 && x < 46 && z > -181 && z < -88;
   for (let i = 0; i < 260; i++) {
     const x = Math.round((rand(state) * 2 - 1) * 186);
     const z = Math.round((rand(state) * 2 - 1) * 186);
     const inSectors = z > -92 && z < 92 && x > -186 && x < 186;
-    if (inSectors) continue;
+    if (inSectors || inPark(x, z)) continue;
     tree(x, z);
   }
-  // a few trees scattered through the sectors too
+  // a few trees scattered through the sectors too — not inside the park
   for (let i = 0; i < 26; i++) {
     const s = CONFIG.world.sectors[i % CONFIG.world.sectors.length];
     const a = rand(state) * Math.PI * 2;
     const r = 40 + rand(state) * 50;
-    tree(Math.round(s.x + Math.cos(a) * r), Math.round(s.z + Math.sin(a) * r));
+    const tx = Math.round(s.x + Math.cos(a) * r), tz = Math.round(s.z + Math.sin(a) * r);
+    if (inPark(tx, tz)) continue;
+    tree(tx, tz);
   }
 
-  return { obstacles, voxels, lootSpots, heightAt, windmill };
+  return { obstacles, voxels, lootSpots, heightAt, windmill, ferris };
 }
