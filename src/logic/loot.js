@@ -68,6 +68,7 @@ export function openCrate(state, ent, crate) {
 }
 
 export function tryOpenCrate(state, ent) {
+  if (ent.chute || ent.binned || ent.binFlyT > 0) return null;   // mid-air E does nothing
   const c = nearestCrate(state, ent, CONFIG.loot.openRange);
   if (c) openCrate(state, ent, c);
   return c;

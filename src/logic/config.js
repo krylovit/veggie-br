@@ -73,6 +73,7 @@ export const CONFIG = {
     crates: 14,         // crates scattered around the map at match start
     openRange: 2.4,     // E distance to pop the lid
     botLootRange: 300,  // an unarmed bot walks to a crate within this range
+    botLootTime: 1.6,   // seconds a bot stands at the lid prying it open
     consolationHp: 12,  // already own the rolled gun? heal instead
     vegOdds: 0.6,       // chance the crate holds the veggie launcher
   },

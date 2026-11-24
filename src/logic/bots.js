@@ -57,6 +57,7 @@ export function makeBots(state, count) {
         tx: 0, tz: 0, think: 0, fireAt: rand(state) * 2,
         strafe: 1, strafeT: 0, stuckT: 0, lastX: 0, lastZ: 0,
         detour: null,   // wall between me and the crate? sidestep here first
+        lootT: 0,       // time spent prying the current crate open
       },
     };
     pickWanderTarget(bot, state);
@@ -203,21 +204,31 @@ export function stepBot(bot, state, dt) {
     }
   }
 
-  // unarmed? forget the fight — run for the nearest crate and loot it
-  if (!bot.guns[0] && !bot.guns[1]) {
+  // unarmed and landed? forget the fight — run for the nearest crate
+  // and loot it. Opening takes a moment: stand at the lid and pry.
+  if (!bot.guns[0] && !bot.guns[1] && bot.onGround && !bot.chute) {
     const c = nearestCrate(state, bot, CONFIG.loot.botLootRange);
     if (c) {
       if (distXZ(bot.pos, c.pos) <= CONFIG.loot.openRange) {
-        openCrate(state, bot, c);
-        bot.ai.detour = null;
+        bot.ai.lootT += dt;
+        want = { x: bot.pos.x, z: bot.pos.z };   // hold position
+        if (bot.ai.lootT >= CONFIG.loot.botLootTime) {
+          bot.ai.lootT = 0;
+          bot.ai.detour = null;
+          openCrate(state, bot, c);
+        }
       } else {
+        bot.ai.lootT = 0;
         const d = bot.ai.detour;
         if (d && distXZ(bot.pos, d) <= 1.6) bot.ai.detour = null;
         want = bot.ai.detour || { x: c.pos.x, z: c.pos.z };
       }
+    } else {
+      bot.ai.lootT = 0;
     }
   } else {
     bot.ai.detour = null;
+    bot.ai.lootT = 0;
   }
 
   // the shrinking wall outranks everything — leg it back inside
@@ -246,7 +257,7 @@ export function stepBot(bot, state, dt) {
   const moved = distXZ(bot.pos, { x: bot.ai.lastX, z: bot.ai.lastZ });
   bot.ai.lastX = bot.pos.x;
   bot.ai.lastZ = bot.pos.z;
-  if (want && moved < cfg.walkSpeed * dt * 0.3) {
+  if (want && bot.ai.lootT <= 0 && moved < cfg.walkSpeed * dt * 0.3) {
     bot.ai.stuckT += dt;
     if (bot.ai.stuckT > 0.4 && bot.onGround) {
       bot.vel.y = CONFIG.player.jumpSpeed;
