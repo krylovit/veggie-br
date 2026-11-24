@@ -40,7 +40,7 @@ export function spawnCrates(state) {
       const r = 10 + rand(state) * (half - 25);
       const x = state.zone.cx + Math.cos(a) * r;
       const z = state.zone.cz + Math.sin(a) * r;
-      if (!blocked(x, z)) { pos = { x, y: 0, z }; break; }
+      if (!blocked(x, z)) { pos = { x, y: state.heightAt(x, z), z }; break; }
     }
     if (!pos) break;
     push(pos);

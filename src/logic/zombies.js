@@ -6,6 +6,7 @@
 import { CONFIG } from './config.js';
 import { v3, copy, distXZ } from './vec3.js';
 import { rand } from './rng.js';
+import { damage } from './world.js';
 
 const everyone = (state) => state.humans.concat(state.bots, state.zombies);
 
@@ -93,6 +94,8 @@ export function infect(state, e, byEnt) {
   e.zombie = true;
   e.guns = [false, false];
   e.mounted = null;
+  if (e.car) { e.car.driver = null; e.car = null; }    // zombies can't drive
+  if (e.cart) { e.cart.rider = null; e.cart = null; }  // or ride coasters
   e.hp = CONFIG.zombies.hp;
   e.biteT = 0;
   if (e.ai) { e.ai.detour = null; e.ai.lootT = 0; }
@@ -154,7 +157,8 @@ export function tryBite(state, z) {
     if (e === z || !e.alive || e.zombie || e.binned || e.onBalcony) continue;
     if (distXZ(z.pos, e.pos) <= cfg.biteRange && Math.abs(e.pos.y - z.pos.y) < 1.8) {
       z.biteT = cfg.biteCooldown;
-      infect(state, e, z);
+      if (e.car) damage(state, e, 8, z.id, null);   // bite dents the car, driver stays human
+      else infect(state, e, z);
       return true;
     }
   }

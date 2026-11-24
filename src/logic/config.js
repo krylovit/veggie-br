@@ -9,6 +9,7 @@ export const CONFIG = {
     sectors: [
       { x: -92, z: 0, kind: 'city' },
       { x: 92, z: 0, kind: 'farm' },
+      { x: 0, z: -135, kind: 'park' },   // amusement park in the north wilds
     ],
   },
   player: {
@@ -170,6 +171,52 @@ export const CONFIG = {
       { wait: 45,  to: 28,  dur: 30, dps: 14 },
       { wait: 40,  to: 12,  dur: 25, dps: 18 },
       { wait: 45,  to: 5,   dur: 35, dps: 22 },
+    ],
+  },
+  // Drivable cars parked on the roads. E to board, WASD drives, E/Space
+  // to bail out. Hard crashes throw you out at half HP; a fast car is
+  // a lethal weapon — run something over and it's gone.
+  cars: {
+    count: 5,
+    maxSpeed: 20,
+    accel: 14,
+    brake: 24,
+    drag: 0.7,          // fraction of speed bled per second
+    turnRate: 1.8,      // rad/s at speed
+    radius: 1.7,        // collision circle
+    enterRange: 3,
+    hp: 120,
+    crashSpeed: 9,      // wall hits faster than this eject the driver
+    crashDmg: 50,       // ejection costs half a health bar
+    runoverSpeed: 6,    // entities die when hit faster than this
+    ejectUp: 9,
+  },
+  // The amusement-park coaster: a rail loop with carts that run on
+  // gravity — they crawl up the lift hill and rocket back down.
+  coaster: {
+    carts: 3,
+    boardRange: 2.8,
+    gravity: 16,        // slope acceleration along the track
+    minSpeed: 3,        // chain-lift keeps carts moving
+    maxSpeed: 26,
+    // closed loop around the park: {x, z, h} waypoints, h = rail top
+    track: [
+      { x: 0,   z: -112, h: 2   },   // station
+      { x: 20,  z: -112, h: 2.4 },
+      { x: 30,  z: -114, h: 3   },
+      { x: 34,  z: -126, h: 5   },
+      { x: 34,  z: -145, h: 8   },
+      { x: 34,  z: -160, h: 10.5 },  // lift hill crest
+      { x: 30,  z: -167, h: 10.5 },
+      { x: 20,  z: -171, h: 9   },
+      { x: 0,   z: -172, h: 8.5 },
+      { x: -20, z: -170, h: 8   },
+      { x: -30, z: -166, h: 6   },
+      { x: -34, z: -158, h: 5   },
+      { x: -34, z: -140, h: 5.5 },   // camelback
+      { x: -34, z: -124, h: 3.5 },
+      { x: -30, z: -112, h: 2.6 },
+      { x: -20, z: -110, h: 2.2 },
     ],
   },
   lobby: {

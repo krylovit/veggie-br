@@ -7,11 +7,44 @@
 import { CONFIG } from './config.js';
 import { v3 } from './vec3.js';
 import { rand } from './rng.js';
+import { buildTrack } from './coaster.js';
 
 export function buildMap(state) {
   const obstacles = [];
   const voxels = [];
   const lootSpots = [];
+
+  // Gentle relief: a field of smooth bumps (hills AND hollows, ±2 m)
+  // covering the wild north/south grasslands. Sectors, roads and all
+  // structures sit in the flat band — nothing built is disturbed.
+  const bumps = [];
+  for (let i = 0; i < 64; i++) {
+    bumps.push({
+      x: (rand(state) * 2 - 1) * 178,
+      z: (rand(state) * 2 - 1) * 178,
+      a: (rand(state) * 2 - 1) * 1.9,    // amplitude, mixed signs
+      s: 6 + rand(state) * 9,            // sigma — broad gentle lumps
+    });
+  }
+  const rawH = (x, z) => {
+    let h = 0;
+    for (const b of bumps) {
+      const dx = x - b.x, dz = z - b.z;
+      h += b.a * Math.exp(-(dx * dx + dz * dz) / (2 * b.s * b.s));
+    }
+    return h;
+  };
+  const parkC = CONFIG.world.sectors.find((s) => s.kind === 'park');
+  const heightAt = (x, z) => {
+    const az = Math.abs(z);
+    let m = Math.min(1, Math.max(0, (az - 95) / 20));       // flat sector band
+    if (parkC) {
+      const pd = Math.hypot(x - parkC.x, z - parkC.z);
+      m *= Math.min(1, Math.max(0, (pd - 52) / 15));        // flat park
+    }
+    const edge = Math.min(1, Math.max(0, (186 - Math.max(Math.abs(x), az)) / 8));
+    return rawH(x, z) * m * edge;                            // ~±2 m in the wilds
+  };
 
   const box = (x0, y0, z0, x1, y1, z1, mat) => {
     obstacles.push({ min: v3(x0, y0, z0), max: v3(x1, y1, z1), mat });
@@ -154,7 +187,8 @@ export function buildMap(state) {
 
   const tree = (bx, bz) => {
     const h = 3 + Math.floor(rand(state) * 2);
-    box(bx + 1, 0, bz + 1, bx + 2, h, bz + 2, 'log');
+    // trunk reaches below ground so hills/hollows can't expose the base
+    box(bx + 1, -3, bz + 1, bx + 2, h, bz + 2, 'log');
     box(bx, h - 1, bz, bx + 3, h + 1, bz + 3, 'leaf');
     box(bx + 1, h + 1, bz + 1, bx + 2, h + 2, bz + 2, 'leaf');
   };
@@ -218,15 +252,17 @@ export function buildMap(state) {
         if (Math.hypot(x + 0.5, z + 0.5) <= PR) pave(cx + x, cz + z, 'stone');
     for (let a = 0; a < 64; a++) {
       const t = (a / 64) * Math.PI * 2;
+      const kz = cz + Math.round(Math.sin(t) * (PR + 0.5));
+      if (Math.abs(kz - cz) < 4) continue;   // kerb gap where the highway crosses
       voxels.push({
         x: cx + Math.round(Math.cos(t) * (PR + 0.5)) + 0.5,
         y: 0.5,
-        z: cz + Math.round(Math.sin(t) * (PR + 0.5)) + 0.5,
+        z: kz + 0.5,
         mat: 'brick',
       });
     }
     for (const [lx, lz] of [[-9, -9], [9, -9], [-9, 9], [9, 9]]) lamp(cx + lx, cz + lz);
-    for (const [bx, bz] of [[-11, -1], [9, -1], [-1, -11], [-1, 9]]) bench(cx + bx, cz + bz);
+    for (const [bx, bz] of [[-11, -5], [9, -5], [-1, -11], [-1, 9]]) bench(cx + bx, cz + bz);
     for (const [px, pz] of [[-11, -11], [10, -11], [-11, 10], [10, 10]]) {
       box(cx + px, 0, cz + pz, cx + px + 2, 1, cz + pz + 2, 'stone');
       box(cx + px, 1, cz + pz, cx + px + 2, 3, cz + pz + 2, 'leaf');
@@ -311,9 +347,70 @@ export function buildMap(state) {
     deco(scx, 3, scz, scx + 1, 4, scz + 1, 'leaf');
   };
 
+  // ---- amusement park sector ---------------------------------------
+  // Fenced grounds around the rollercoaster: main walk, food stalls,
+  // a carousel, a ferris wheel — and the big rail loop dominating it.
+  const carousel = (cx, cz) => {
+    box(cx, 0, cz, cx + 1, 5, cz + 1, 'log');                       // pole
+    box(cx - 2, 4, cz - 2, cx + 3, 5, cz + 3, 'brick');             // canopy
+    deco(cx - 1, 5, cz - 1, cx + 2, 7, cz + 2, 'sand');             // peak
+    for (let i = 0; i < 4; i++) {
+      const t = (i / 4) * Math.PI * 2;
+      box(cx + Math.round(Math.cos(t) * 2), 1, cz + Math.round(Math.sin(t) * 2),
+          cx + Math.round(Math.cos(t) * 2) + 1, 2, cz + Math.round(Math.sin(t) * 2) + 1, 'log');
+    }
+    paveRect(cx - 3, cz - 3, cx + 4, cz + 4, 'path');
+  };
+  const ferris = (cx, cz) => {
+    box(cx - 2, 0, cz, cx - 1, 10, cz + 1, 'log');                  // A-legs
+    box(cx + 1, 0, cz, cx + 2, 10, cz + 1, 'log');
+    deco(cx - 1, 9, cz, cx + 1, 11, cz + 1, 'log');                 // hub
+    for (let i = 0; i < 20; i++) {                                  // the wheel
+      const t = (i / 20) * Math.PI * 2;
+      deco(cx + Math.round(Math.cos(t) * 8), 10 + Math.round(Math.sin(t) * 8),
+           cz, cx + Math.round(Math.cos(t) * 8) + 1,
+           10 + Math.round(Math.sin(t) * 8) + 1, cz + 1, 'brick');
+      deco(cx + Math.round(Math.cos(t) * 8), 10 + Math.round(Math.sin(t) * 8) - 1,
+           cz, cx + Math.round(Math.cos(t) * 8) + 1,
+           10 + Math.round(Math.sin(t) * 8), cz + 1, 'sand');       // gondolas
+    }
+  };
+  const park = (cx, cz) => {
+    // perimeter: fence ring, road gates where the NS connector crosses
+    const x0 = cx - 42, x1 = cx + 40, z0 = cz - 42, z1 = cz + 40;
+    box(x0, 0, z0, 3, 2, z0 + 1, 'brick');                           // north wall, west of road gate
+    box(9, 0, z0, x1, 2, z0 + 1, 'brick');                           // north wall, east of road gate
+    box(x0, 0, z1 - 1, 3, 2, z1, 'brick');                           // south wall, west of road gate
+    box(9, 0, z1 - 1, x1, 2, z1, 'brick');                           // south wall, east of road gate
+    box(x0, 0, z0, x0 + 1, 2, z1, 'brick');                          // west
+    box(x1 - 1, 0, z0, x1, 2, z1, 'brick');                          // east
+    // inside: main walk + the path to the coaster station
+    paveRect(x0 + 3, cz - 2, x1 - 3, cz + 3, 'path');
+    paveRect(cx - 2, cz + 3, cx + 3, cz + 28, 'path');
+    stall(cx - 34, cz + 6, 'brick');
+    stall(cx - 28, cz + 6, 'sand');
+    stall(cx - 22, cz + 6, 'leaf');
+    carousel(cx - 30, cz - 14);
+    ferris(cx + 28, cz - 24);
+    for (const [lx, lz] of [[-30, 0], [30, 0], [-10, 20], [10, 20]]) lamp(cx + lx, cz + lz);
+    for (const [bx, bz] of [[-14, 2], [12, 2], [-34, 14], [30, 14]]) bench(cx + bx, cz + bz);
+    hedge(x0 + 2, cz + 8, x0 + 3, cz + 30);
+    hedge(x1 - 3, cz + 8, x1 - 2, cz + 30);
+    // the coaster: a rail ribbon over the waypoint loop + supports
+    const tr = buildTrack();
+    tr.pts.forEach((p, i) => {
+      const rx = Math.floor(p.x), rz = Math.floor(p.z), ry = Math.round(p.y);
+      box(rx, ry - 1, rz, rx + 2, ry, rz + 2, 'stone');              // rail bed
+      if (i % 7 === 0 && ry > 2) {                                   // support pier
+        box(rx, 0, rz, rx + 1, ry - 1, rz + 1, 'log');
+      }
+    });
+  };
+
   for (const s of CONFIG.world.sectors) {
     if (s.kind === 'city') city(s.x, s.z);
     else if (s.kind === 'farm') farm(s.x, s.z);
+    else if (s.kind === 'park') park(s.x, s.z);
   }
 
   // Forest belt around the whole map edge — the world ends in woods.
@@ -332,5 +429,5 @@ export function buildMap(state) {
     tree(Math.round(s.x + Math.cos(a) * r), Math.round(s.z + Math.sin(a) * r));
   }
 
-  return { obstacles, voxels, lootSpots };
+  return { obstacles, voxels, lootSpots, heightAt };
 }

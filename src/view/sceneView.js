@@ -255,12 +255,13 @@ export function createView(container) {
   groundTex.repeat.set(CONFIG.world.size, CONFIG.world.size); // 1 tile = 1 m
   groundTex.needsUpdate = true;
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(CONFIG.world.size, CONFIG.world.size),
+    new THREE.PlaneGeometry(CONFIG.world.size, CONFIG.world.size, 192, 192),
     new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
+  let groundShaped = false;   // vertices get pushed to state.heightAt on first sync
 
   const zoneWall = new THREE.Mesh(
     new THREE.CylinderGeometry(1, 1, 26, 72, 1, true),
@@ -370,10 +371,13 @@ export function createView(container) {
   // crate, lid plays its `open` clip when looted.
   let crateProto = null;                // {scene, anims}
   gltf.load('assets/models/props/crate-small.glb', (g) => {
+    g.scene.rotation.x = Math.PI;   // the GLB arrives lid-down — flip it
     crateProto = { scene: g.scene, anims: g.animations };
   }, undefined, () => {});
   const crateViews = new Map();         // crateId -> {g, mixer, opened}
   const popViews = new Map();           // lootPop id -> {g} floating gun bubble
+  const carViews = new Map();           // car idx -> {g, wheels, mat}
+  const cartViews = new Map();          // cart idx -> {g}
 
   // Infection hatch at map centre — a stone-rimmed plate with a heavy
   // lid; pressing the field button slides the lid off and zombies pour.
@@ -561,6 +565,58 @@ export function createView(container) {
     const crust = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.46, 0.09), mat(0xa06832));
     const bread = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.1), mat(0xe8bc72));
     g.add(crust, bread);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+
+  // The drivable car: rounded box sedan on four wheels. Body colour
+  // varies per car so parking spots read as different vehicles.
+  function makeCarMesh(i) {
+    const colors = [0xc94f38, 0x3f7fbf, 0xd8a437, 0x58a05a, 0x8a6bb8];
+    const paint = mat(colors[i % colors.length], 0.4);
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.85, 1.8), paint);
+    body.position.y = 0.95;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.75, 1.6),
+      mat(0x222831, 0.2));
+    cabin.position.set(-0.15, 1.65, 0);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 1.7), paint);
+    hood.position.set(1.25, 1.15, 0);
+    g.add(body, cabin, hood);
+    const wheels = [];
+    const wg = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
+    const wm = mat(0x1a1a1e, 0.9);
+    for (const [wx, wz] of [[1.15, 0.95], [1.15, -0.95], [-1.15, 0.95], [-1.15, -0.95]]) {
+      const w = new THREE.Mesh(wg, wm);
+      w.rotation.x = Math.PI / 2;
+      w.position.set(wx, 0.42, wz);
+      wheels.push(w);
+      g.add(w);
+    }
+    for (const dz of [-0.55, 0.55]) {          // headlights
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.3),
+        mat(0xfff2b8, 0.1));
+      h.position.set(1.82, 1.0, dz);
+      g.add(h);
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return { g, wheels, paint };
+  }
+
+  // Coaster cart: an open-top tub that rides the rail loop.
+  function makeCartMesh(i) {
+    const colors = [0xe05252, 0x52a0e0, 0xe0b052];
+    const g = new THREE.Group();
+    const tub = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 1.9),
+      mat(colors[i % colors.length], 0.4));
+    tub.position.y = 0.55;
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 2.0),
+      mat(0xf0f0f0, 0.5));
+    rim.position.y = 0.95;
+    const bogie = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 1.2),
+      mat(0x2c2c34, 0.8));
+    bogie.position.y = 0.1;
+    g.add(tub, rim, bogie);
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return g;
   }
@@ -770,7 +826,7 @@ export function createView(container) {
     upgradeToSoldier(g, e);
     g.position.set(e.pos.x, e.pos.y, e.pos.z);
     g.rotation.y = e.yaw;
-    g.userData.body.visible = !e.binned;
+    g.userData.body.visible = !e.binned && !e.car;   // drivers sit inside the car
     g.userData.bin.visible = !!e.binned && e.binKind !== 'toast';
     g.userData.toast.visible = !!e.binned && e.binKind === 'toast';
     // kicked bin somersaults through the air
@@ -921,6 +977,17 @@ export function createView(container) {
     canvas: renderer.domElement,
 
     sync(state, aim, dtReal) {
+      // one-time: bend the flat ground into the terrain relief
+      if (!groundShaped && state.heightAt) {
+        groundShaped = true;
+        const pos = ground.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const wx = pos.getX(i), wz = -pos.getY(i);   // plane local Y -> world -Z
+          pos.setZ(i, state.heightAt(wx, wz));
+        }
+        pos.needsUpdate = true;
+        ground.geometry.computeVertexNormals();
+      }
       // player is first-person — no self mesh; everyone else gets capsules
       for (const e of state.humans.concat(state.bots, state.zombies || [])) {
         if (e === state.player) {
@@ -1035,6 +1102,37 @@ export function createView(container) {
             }
           }
           cv.mixer.update(dtReal);
+        }
+      }
+
+      // drivable cars: spawn meshes lazily, follow the logic state
+      for (const c of state.cars || []) {
+        let cv = carViews.get(c.idx);
+        if (!cv) {
+          cv = makeCarMesh(c.idx);
+          carViews.set(c.idx, cv);
+          scene.add(cv.g);
+        }
+        cv.g.position.set(c.pos.x, c.pos.y, c.pos.z);
+        cv.g.rotation.y = c.yaw - Math.PI / 2;    // mesh nose points +X
+        cv.g.rotation.z = c.steer * 0.03;
+        cv.g.visible = c.driver !== state.player;   // first-person: own car hidden
+        cv.paint.color.setHex(c.dead ? 0x3a3a3a : [0xc94f38, 0x3f7fbf, 0xd8a437, 0x58a05a, 0x8a6bb8][c.idx % 5]);
+        const roll = c.speed * dtReal / 0.42;
+        for (const w of cv.wheels) w.rotation.z -= roll;
+      }
+      // coaster carts ride the rail loop
+      if (state.coaster) {
+        for (const c of state.coaster.carts) {
+          let cv = cartViews.get(c.idx);
+          if (!cv) {
+            cv = { g: makeCartMesh(c.idx) };
+            cartViews.set(c.idx, cv);
+            scene.add(cv.g);
+          }
+          cv.g.position.set(c.pos.x, c.pos.y, c.pos.z);
+          cv.g.rotation.y = c.yaw - Math.PI / 2;
+          cv.g.visible = c.rider !== state.player;   // first-person: own cart hidden
         }
       }
 

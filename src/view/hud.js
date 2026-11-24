@@ -78,12 +78,24 @@ export function createHud() {
       const nearCrate =
         canE && (state.crates || []).some(
           (c) => !c.opened && distXZ(p.pos, c.pos) < CONFIG.loot.openRange);
-      kh.textContent = popNear
+      const nearCar =
+        canE && !p.car && !p.cart && (state.cars || []).find(
+          (c) => !c.dead && !c.driver && distXZ(p.pos, c.pos) < CONFIG.cars.enterRange);
+      const nearCart =
+        canE && !p.car && !p.cart && state.coaster && state.coaster.carts.find(
+          (c) => !c.rider && distXZ(p.pos, c.pos) < CONFIG.coaster.boardRange
+              && Math.abs(c.pos.y - p.pos.y) < 3);
+      kh.textContent = p.car
+          ? `E — ВЫЙТИ · ${Math.abs(p.car.speed).toFixed(0)} м/с`
+        : p.cart ? 'E — СОЙТИ С ГОРКИ'
+        : popNear
           ? (dupPop ? 'УЖЕ ЕСТЬ ТАКАЯ ПУШКА' : 'E — ВЗЯТЬ ОРУЖИЕ')
+        : nearCar ? 'E — ЗА РУЛЬ'
+        : nearCart ? 'E — В ВАГОНЕТКУ'
         : nearButton ? 'E — ВЫПУСТИТЬ ЗОМБИ!'
         : nearCrate ? 'E — ОТКРЫТЬ ЯЩИК'
         : 'E — ПНУТЬ БАК!';
-      kh.style.opacity = (nearBin || nearButton || popNear || nearCrate) ? 1 : 0;
+      kh.style.opacity = (nearBin || nearButton || popNear || nearCrate || nearCar || nearCart || p.car || p.cart) ? 1 : 0;
       $('scope').style.opacity = p.mounted != null ? 1 : 0;
 
       if (flashT > 0) {
@@ -178,9 +190,17 @@ export function createHud() {
         feed(e.target === 'player'
           ? 'ВАС УКУСИЛИ — вы теперь зомби!'
           : `${e.name} стал зомби!`);
+      } else if (e.type === 'carCrash') {
+        if (e.ent === 'player') {
+          $('dmgflash').style.opacity = 1;
+          flashT = 0.6;
+          feed('АВАРИЯ! Вы вылетели из машины (−50 HP)');
+        }
       } else if (e.type === 'kill') {
         feed(e.attacker === 'zone'
           ? `${e.name} съеден зоной`
+          : e.veggie === 'car'
+          ? `${e.name} переехан машиной${e.attacker === 'player' ? ' (ваш фраг)' : ''}`
           : `${e.name} выбыл${e.attacker === 'player' ? ' (ваш фраг)' : ''}`);
       }
     },

@@ -141,6 +141,8 @@ export function createNet() {
           lv: e.lives, w: e.slot || 0,
           g: (e.guns ? (e.guns[0] ? 1 : 0) | (e.guns[1] ? 2 : 0) : 3),
           zm: e.zombie ? 1 : 0,
+          ca: e.car ? e.car.idx + 1 : 0,
+          ct: e.cart ? e.cart.idx + 1 : 0,
         })),
         zb: state.zombies.map((z, i) => ({
           i, x: r2(z.pos.x), y: r2(z.pos.y), z: r2(z.pos.z),
@@ -162,6 +164,13 @@ export function createNet() {
         })),
         lp: state.lootPops.map((p, i) => ({
           i, x: r2(p.pos.x), z: r2(p.pos.z), s: p.slot,
+        })),
+        ca: state.cars.map((c, i) => ({
+          i, x: r2(c.pos.x), y: r2(c.pos.y), z: r2(c.pos.z),
+          yw: r2(c.yaw), hp: Math.round(c.hp), dd: c.dead ? 1 : 0,
+        })),
+        ck: state.coaster.carts.map((c, i) => ({
+          i, x: r2(c.pos.x), y: r2(c.pos.y), z: r2(c.pos.z), yw: r2(c.yaw),
         })),
         ev: net.pendingEvents.splice(0),
       },
@@ -211,6 +220,8 @@ export function createNet() {
       e.slot = se.w || 0;
       if (se.g != null) e.guns = [!!(se.g & 1), !!(se.g & 2)];
       e.zombie = !!se.zm;
+      e.car = se.ca ? state.cars[se.ca - 1] || null : null;
+      e.cart = se.ct ? state.coaster.carts[se.ct - 1] || null : null;
       if (!e.alive) e.vel = { x: 0, y: 0, z: 0 };
     }
     // projectiles: host list wins; keep only very fresh local shots that
@@ -251,6 +262,21 @@ export function createNet() {
         z.yaw = sz.yw;
         z.hp = sz.hp;
         z.alive = !!sz.al;
+      }
+    }
+    if (s.ca) {
+      for (const sc of s.ca) {
+        const c = state.cars[sc.i];
+        if (!c) continue;
+        c.pos.x = sc.x; c.pos.y = sc.y; c.pos.z = sc.z;
+        c.yaw = sc.yw; c.hp = sc.hp; c.dead = !!sc.dd;
+      }
+    }
+    if (s.ck) {
+      for (const sc of s.ck) {
+        const c = state.coaster.carts[sc.i];
+        if (!c) continue;
+        c.pos.x = sc.x; c.pos.y = sc.y; c.pos.z = sc.z; c.yaw = sc.yw;
       }
     }
     if (s.lp) {

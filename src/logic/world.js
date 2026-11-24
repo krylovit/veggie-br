@@ -9,6 +9,8 @@ import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
 import { spawnCrates, tryOpenCrate, tryGrabLoot } from './loot.js';
 import { makeInfection, stepHatch, stepZombie, tryPressButton, tryBite } from './zombies.js';
+import { spawnCars, stepCar, tryEnterCar, exitCar } from './cars.js';
+import { makeCoaster, stepCoaster, tryBoardCart, exitCart } from './coaster.js';
 import { buildMap } from './map.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
@@ -55,6 +57,9 @@ export function createState(opts = {}) {
   state.obstacles = map.obstacles;
   state.voxels = map.voxels;
   state.lootSpots = map.lootSpots;   // building interiors — indoor crates
+  state.heightAt = map.heightAt;     // terrain relief: gentle hills in the wilds
+  state.cars = spawnCars(state);
+  makeCoaster(state);
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));
   state.crates = spawnCrates(state);
   makeInfection(state);
@@ -154,6 +159,8 @@ export function step(state, input, dt) {
     }
     stepHatch(state, dt);
     for (const lp of state.lootPops) lp.age += dt;
+    for (const c of state.cars) stepCar(state, c, dt);
+    stepCoaster(state, dt);
     separateEntities(state);
   } else {
     // client: snapshot positions arrive in e.tgt — drift toward them
@@ -222,6 +229,21 @@ function stepHuman(state, p, input, dt) {
     stepZombieHuman(state, p, input, dt);
     return;
   }
+  // driving a car: WASD steers the vehicle, E/Space bails out
+  if (p.car) {
+    p.car.wish = { mx: input.mx, mz: input.mz };
+    if (input.aim) p.yaw = Math.atan2(input.aim.x, input.aim.z);
+    tickCooldowns(p, dt);
+    if (input.interact || input.jump) exitCar(state, p, false);
+    return;
+  }
+  // riding a coaster cart: hang on, E/Space hops off where you are
+  if (p.cart) {
+    if (input.aim) p.yaw = Math.atan2(input.aim.x, input.aim.z);
+    tickCooldowns(p, dt);
+    if (input.interact || input.jump) exitCart(state, p);
+    return;
+  }
   const cfg = CONFIG.player;
 
   // weapon switching: 1/2 selects a slot, wheel cycles
@@ -254,7 +276,8 @@ function stepHuman(state, p, input, dt) {
     if (shot && p === state.player) state.stats.shots++;
   }
   if (input.interact &&
-      !tryKick(state, p) && !tryGrabLoot(state, p) && !tryPressButton(state, p)) {
+      !tryKick(state, p) && !tryGrabLoot(state, p) && !tryPressButton(state, p) &&
+      !tryEnterCar(state, p) && !tryBoardCart(state, p)) {
     tryOpenCrate(state, p);
   }
   integrate(p, dt, state);
@@ -497,13 +520,8 @@ function integrate(e, dt, state) {
   // Landing check runs BEFORE side pushout: a crate top is a floor when the
   // feet reached it from above this step (swept — fast falls can't tunnel).
   const floor = floorHeight(e, state, prevY);
-  if (floor > 0 && e.pos.y <= floor) {
+  if (e.pos.y <= floor) {
     e.pos.y = floor;
-    e.vel.y = 0;
-    e.onGround = true;
-    if (e.chute) { e.chute = false; state.events.push({ type: 'landed', pos: copy(e.pos) }); }
-  } else if (e.pos.y <= 0) {
-    e.pos.y = 0;
     e.vel.y = 0;
     e.onGround = true;
     if (e.chute) { e.chute = false; state.events.push({ type: 'landed', pos: copy(e.pos) }); }
@@ -520,9 +538,11 @@ function integrate(e, dt, state) {
 // crate top; at/above the top the crate is a floor, not a wall.
 function resolveObstacleSides(e, state) {
   const r = CONFIG.player.radius;
+  const floorBase = state.heightAt(e.pos.x, e.pos.z);
   for (const o of state.obstacles) {
     if (e.pos.y >= o.max.y - 0.05) continue;
     if (e.pos.y + CONFIG.player.height <= o.min.y + 0.05) continue;   // fully overhead — a ceiling, not a wall
+    if (o.max.y <= floorBase + 0.01) continue;                       // buried under the terrain — not a wall
     const cx = clamp(e.pos.x, o.min.x, o.max.x);
     const cz = clamp(e.pos.z, o.min.z, o.max.z);
     const dx = e.pos.x - cx;
@@ -550,7 +570,7 @@ function resolveObstacleSides(e, state) {
 // Highest surface under the entity: the ground plane or a crate top the
 // feet reached from above this step (swept, so fast falls can't tunnel).
 function floorHeight(e, state, prevY) {
-  let floor = 0;
+  let floor = state.heightAt(e.pos.x, e.pos.z);
   const r = CONFIG.player.radius * 0.6;
   for (const o of state.obstacles) {
     if (e.pos.x <= o.min.x - r || e.pos.x >= o.max.x + r) continue;
@@ -595,6 +615,11 @@ function stepProjectiles(state, dt) {
     consider(segmentGround(p.prev, p.pos, 0), 'ground', null);
     for (const o of state.obstacles) {
       consider(segmentAABB(p.prev, p.pos, o.min, o.max), 'obstacle', null);
+    }
+    // terrain: inside a hollow the visual ground dips below the y=0
+    // plane — anything below the relief surface is a dirt hit.
+    if (!hit && p.pos.y < state.heightAt(p.pos.x, p.pos.z)) {
+      hit = { t: 1, point: copy(p.pos), kind: 'ground', ent: null };
     }
 
     if (hit) {
@@ -664,6 +689,18 @@ function stepPickups(state, dt) {
 export function damage(state, ent, amount, attackerId, veggie) {
   if (!ent.alive || ent.binned) return;
   if (!ent.bot && !ent.engaged) return;
+  // a driver is protected by the vehicle — hits land on the car, the
+  // zone is the only thing that still reaches through.
+  if (ent.car && attackerId !== 'zone' && attackerId !== 'car') {
+    ent.car.hp -= amount;
+    if (ent.car.hp <= 0 && !ent.car.dead) {
+      ent.car.dead = true;
+      ent.car.speed = 0;
+      state.events.push({ type: 'carDead', pos: copy(ent.pos) });
+      exitCar(state, ent, false);
+    }
+    return;
+  }
   ent.hp -= amount;
   state.events.push({
     type: 'hit',
