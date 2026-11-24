@@ -58,6 +58,7 @@ export function createState(opts = {}) {
   state.voxels = map.voxels;
   state.lootSpots = map.lootSpots;   // building interiors — indoor crates
   state.heightAt = map.heightAt;     // terrain relief: gentle hills in the wilds
+  state.windmill = map.windmill;     // rotor mount point for the view
   state.cars = spawnCars(state);
   makeCoaster(state);
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));

@@ -228,12 +228,15 @@ export function buildMap(state) {
     box(x0, 0, z0, x0 + 1, 1, z1, 'log');
     box(x1 - 1, 0, z0, x1, 1, z1, 'log');
   };
-  // Windmill: stone tower, cap, and a static + of blades on the face.
-  const windmill = (x0, z0) => {
+  // Windmill: stone tower + timber cap. The blades are NOT voxels —
+  // a spinning rotor mesh hangs on the south face (sceneView reads
+  // map.windmill for the mount point).
+  let windmill = null;
+  const mill = (x0, z0) => {
     box(x0, 0, z0, x0 + 4, 8, z0 + 4, 'stone');
     box(x0 - 1, 8, z0 - 1, x0 + 5, 10, z0 + 5, 'log');
-    deco(x0 + 1, 7, z0 + 4, x0 + 3, 14, z0 + 5, 'log');   // blade |
-    deco(x0 - 2, 10, z0 + 4, x0 + 6, 12, z0 + 5, 'log');  // blade —
+    box(x0 + 1, 9, z0 + 4, x0 + 3, 10, z0 + 6, 'log');   // axle stub
+    windmill = { x: x0 + 2, y: 9.3, z: z0 + 6.2 };       // rotor mount
   };
 
   // ---- highways -----------------------------------------------------
@@ -322,7 +325,7 @@ export function buildMap(state) {
     field(cx - 62, cz - 68, cx - 20, cz - 22);
     field(cx - 12, cz - 68, cx + 32, cz - 22);
     field(cx + 48, cz - 68, cx + 80, cz - 22);
-    windmill(cx + 36, cz - 74);
+    mill(cx + 36, cz - 74);
     silo(cx + 74, cz - 16);
     silo(cx + 79, cz - 16);
     // farmhouse + fenced yard south of the highway
@@ -456,5 +459,5 @@ export function buildMap(state) {
     tree(Math.round(s.x + Math.cos(a) * r), Math.round(s.z + Math.sin(a) * r));
   }
 
-  return { obstacles, voxels, lootSpots, heightAt };
+  return { obstacles, voxels, lootSpots, heightAt, windmill };
 }

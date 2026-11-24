@@ -631,6 +631,30 @@ export function createView(container) {
     return g;
   }
 
+  // Windmill rotor: four wooden spars with cloth sails in an X, spun by
+  // the sync loop. Mounted on the farm mill's axle stub.
+  function makeWindmillRotor() {
+    const g = new THREE.Group();
+    for (let i = 0; i < 4; i++) {
+      const b = new THREE.Group();
+      const spar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.2, 0.14), MATS.log);
+      spar.position.y = 2.6;
+      const sail = new THREE.Mesh(new THREE.BoxGeometry(1.0, 4.0, 0.05),
+        mat(0xe8e0c8, 0.9));
+      sail.position.set(0.55, 3.0, 0);
+      b.add(spar, sail);
+      b.rotation.z = (i / 4) * Math.PI * 2 + Math.PI / 4;   // X pattern
+      g.add(b);
+    }
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 0.4, 0.5, 10).rotateX(Math.PI / 2),
+      mat(0x54371e, 0.8));
+    g.add(hub);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+  let millRotor = null;   // built lazily once state.windmill is known
+
   // The junk-bin: a big readable chrome toaster, two toasts sticking
   // out of the slots, red lever on the side. Same footprint as the bin.
   function makeToasterBinMesh() {
@@ -998,6 +1022,13 @@ export function createView(container) {
         pos.needsUpdate = true;
         ground.geometry.computeVertexNormals();
       }
+      // one-time: hang the spinning rotor on the windmill axle
+      if (!millRotor && state.windmill) {
+        millRotor = makeWindmillRotor();
+        millRotor.position.set(state.windmill.x, state.windmill.y, state.windmill.z);
+        scene.add(millRotor);
+      }
+      if (millRotor) millRotor.rotation.z += dtReal * 1.1;
       // player is first-person — no self mesh; everyone else gets capsules
       for (const e of state.humans.concat(state.bots, state.zombies || [])) {
         if (e === state.player) {
