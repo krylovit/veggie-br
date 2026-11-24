@@ -2,6 +2,7 @@
 // meshes; never feeds back into the simulation. First-person camera.
 import * as THREE from 'three';
 import { GLTFLoader } from '../../vendor/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from '../../vendor/utils/SkeletonUtils.js';
 import { CONFIG } from '../logic/config.js';
 
 const VEG_COLOR = {
@@ -336,6 +337,84 @@ export function createView(container) {
     }, undefined, () => {});
   });
 
+  // Soldier bodies: one GLB template cloned (skeleton and all) per
+  // entity, our veggie/junk gun GLBs attached to its arm-right bone.
+  let soldierProto = null;              // {scene, anims}
+  const gunProtos = [null, null];       // slot -> Object3D template
+  gltf.load('assets/models/character-soldier.glb', (g) => {
+    soldierProto = { scene: g.scene, anims: g.animations };
+  }, undefined, () => {});
+  gltf.load('assets/models/ovoschemet.glb', (g) => { gunProtos[0] = g.scene; }, undefined, () => {});
+  gltf.load('assets/models/Hlamomet.glb',   (g) => { gunProtos[1] = g.scene; }, undefined, () => {});
+
+  const ANIM_NAMES = ['walk', 'holding-right', 'holding-right-shoot', 'fall', 'idle'];
+  const HAND_POS = { x: 0.02, y: 0.06, z: 0.04 };   // nudge in the grip
+  const HAND_ROT = { x: 0, y: Math.PI / 2, z: 0 };  // gun forward along arm
+
+  function upgradeToSoldier(g, color) {
+    if (!soldierProto || g.userData.glb) return;
+    g.userData.glb = true;
+    const model = cloneSkeleton(soldierProto.scene);
+    const bb = new THREE.Box3().setFromObject(model);
+    const k = CONFIG.player.height / Math.max(bb.max.y - bb.min.y, 1e-4);
+    model.scale.setScalar(k);
+    model.position.y = -bb.min.y * k;
+    model.traverse((o) => {
+      if (o.isMesh || o.isSkinnedMesh) {
+        o.castShadow = true;
+        o.frustumCulled = false;   // skinned meshes glitch-cull otherwise
+        o.material = o.material.clone();
+        o.material.color.multiplyScalar(1);
+        o.material.color.lerp(new THREE.Color(color), 0.28);  // team tint
+      }
+    });
+    const body = g.userData.body;
+    body.clear();
+    body.add(model);
+    body.add(g.userData.stuck);          // re-attach stuck-veggie layer
+    body.add(g.userData.slime);
+    // guns into the right hand, slot visibility toggled in sync
+    const hand = new THREE.Group();
+    const armR = model.getObjectByName('arm-right');
+    if (armR) armR.add(hand); else { hand.position.set(0.5, 1.1, 0.2); body.add(hand); }
+    hand.position.set(HAND_POS.x, HAND_POS.y, HAND_POS.z);
+    hand.rotation.set(HAND_ROT.x, HAND_ROT.y, HAND_ROT.z);
+    g.userData.guns = gunProtos.map((proto) => {
+      if (!proto) return null;
+      const w = proto.clone();
+      const wb = new THREE.Box3().setFromObject(w);
+      const ws = wb.getSize(new THREE.Vector3());
+      const kk = 0.95 / Math.max(ws.x, ws.y, ws.z, 1e-4) / k;  // ~0.95m in world
+      w.scale.setScalar(kk);
+      const wc = wb.getCenter(new THREE.Vector3());
+      w.position.set(-wc.x * kk, -wc.y * kk, -wc.z * kk);
+      const holder = new THREE.Group();
+      holder.add(w);
+      holder.visible = false;
+      hand.add(holder);
+      return holder;
+    });
+    const mixer = new THREE.AnimationMixer(model);
+    const actions = {};
+    for (const n of ANIM_NAMES) {
+      const c = THREE.AnimationClip.findByName(soldierProto.anims, n);
+      if (c) actions[n] = mixer.clipAction(c);
+    }
+    g.userData.anim = { mixer, actions, cur: null };
+    g.userData.shootT = 0;
+    g.userData.lp = null;                // last pos — speed estimate
+  }
+
+  function playAnim(g, name, dt) {
+    const anim = g.userData.anim;
+    if (!anim || anim.cur === name) return;
+    const next = anim.actions[name];
+    if (!next) return;
+    next.reset().fadeIn(0.15).play();
+    if (anim.cur && anim.actions[anim.cur]) anim.actions[anim.cur].fadeOut(0.15);
+    anim.cur = name;
+  }
+
   // First-person chute: семейные трусы overhead while dropping in.
   const playerChute = makeChuteMesh('briefs', true);
   playerChute.position.set(0, 1.5, -0.55);
@@ -587,7 +666,7 @@ export function createView(container) {
 
   // No floating labels — stuck veggies carry the message, misses stay
   // silent. A hit is just a small white blink.
-  function syncEntity(e, color, time) {
+  function syncEntity(e, color, time, dt) {
     if (!e.alive) {
       const g = entities.get(e.id);
       if (g) { scene.remove(g); entities.delete(e.id); }
@@ -599,6 +678,7 @@ export function createView(container) {
       if (!e.bot) g.add(makeNameSprite(e.name || 'игрок'));
       entities.set(e.id, g);
     }
+    upgradeToSoldier(g, e.bot ? botColor(e.id) : 0x7ec9ff);
     g.position.set(e.pos.x, e.pos.y, e.pos.z);
     g.rotation.y = e.yaw;
     g.userData.body.visible = !e.binned;
@@ -615,6 +695,25 @@ export function createView(container) {
     }
     g.userData.slime.visible = (e.slimedTimer || 0) > 0;
     if (!e.binned) syncStuck(e, g);
+    // soldier rig: pick the clip by what the entity is doing
+    const anim = g.userData.anim;
+    if (anim) {
+      const lp = g.userData.lp;
+      const speed = lp && dt > 0
+        ? Math.hypot(e.pos.x - lp.x, e.pos.z - lp.z) / dt : 0;
+      g.userData.lp = { x: e.pos.x, z: e.pos.z };
+      g.userData.shootT = Math.max(0, (g.userData.shootT || 0) - dt);
+      let want = speed > 0.8 ? 'walk' : 'holding-right';
+      if (e.chute) want = 'fall';
+      if (e.mounted != null) want = 'holding-right';
+      if (g.userData.shootT > 0) want = 'holding-right-shoot';
+      playAnim(g, want, dt);
+      anim.mixer.update(dt);
+      if (g.userData.guns) {
+        const cur = e.slot || 0;
+        g.userData.guns.forEach((gun, i) => { if (gun) gun.visible = i === cur; });
+      }
+    }
   }
 
   // Balcony ring: several independent arc platforms at a FIXED radius —
@@ -736,7 +835,7 @@ export function createView(container) {
           if (pg) { scene.remove(pg); entities.delete(e.id); }
           continue;
         }
-        syncEntity(e, 0, state.time);
+        syncEntity(e, 0, state.time, dtReal);
       }
 
       syncBalcony(state);
@@ -855,6 +954,8 @@ export function createView(container) {
 
     onEvent(e) {
       if (e.type === 'fire') {
+        const fg = entities.get(e.owner);
+        if (fg) fg.userData.shootT = 0.35;          // shoot anim trigger
         if (e.owner === 'player') vmKick = 0.14;   // no muzzle flash — quiet
       } else if (e.type === 'hit') {
         spawnEffect(e.pos, 0xffffff, 0.14, 1.4, 0.35);   // quiet blink — no labels

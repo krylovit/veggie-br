@@ -138,7 +138,7 @@ export function createNet() {
           m: e.mounted,
           en: e.engaged ? 1 : 0,
           vc: e.vegCount, vs: e.vegStuck,
-          lv: e.lives,
+          lv: e.lives, w: e.slot || 0,
         })),
         pr: state.projectiles.map((p) => ({
           i: p.id, t: p.type,
@@ -193,6 +193,7 @@ export function createNet() {
       e.vegCount = se.vc;
       if (se.vs) e.vegStuck = se.vs.slice();
       e.lives = se.lv;
+      e.slot = se.w || 0;
       if (!e.alive) e.vel = { x: 0, y: 0, z: 0 };
     }
     // projectiles: host list wins; keep only very fresh local shots that

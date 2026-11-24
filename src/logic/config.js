@@ -147,6 +147,7 @@ export const CONFIG = {
     walkSpeed: 7.5,
     aggroRange: 45,       // start tracking enemies inside this range
     fireRange: 32,        // actually shoot inside this range
+    junkRange: 13,        // closer than this: switch to the junk shotgun
     engageNear: 8,        // back off if an enemy is closer than this
     engageFar: 20,        // close in if an enemy is farther than this
     toastHp: 0.7,         // grab a toast slice when hp below this fraction

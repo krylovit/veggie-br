@@ -48,7 +48,9 @@ export function makeBots(state, count) {
       slimedTimer: 0,
       mounted: null,
       onGround: false,
-      weapon: makeWeapon(),
+      weapon: makeWeapon(),                       // shared slime cooldown
+      weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie, [1] junk
+      slot: 0,
       ai: {
         tx: 0, tz: 0, think: 0, fireAt: rand(state) * 2,
         strafe: 1, strafeT: 0, stuckT: 0, lastX: 0, lastZ: 0,
@@ -151,7 +153,7 @@ export function stepBot(bot, state, dt) {
 
   bot.ai.think -= dt;
   if (bot.ai.think <= 0) pickWanderTarget(bot, state);
-  stepWeapon(bot.weapon, dt);   // without this the gun never reloads
+  for (const w of bot.weaponSlots) stepWeapon(w, dt);
 
   let want = null;
   // wounded? smell toast — heal before fighting on empty HP
@@ -169,6 +171,7 @@ export function stepBot(bot, state, dt) {
     const dd = distXZ(bot.pos, target.pos);
     engaged = dd < cfg.aggroRange;
     bot.yaw = Math.atan2(target.pos.x - bot.pos.x, target.pos.z - bot.pos.z);
+    bot.slot = dd < cfg.junkRange ? 1 : 0;   // up close: junk shotgun
     if (bot.ai.fireAt <= 0 && dd < cfg.fireRange) {
       fire(state, bot, aimAt(bot, target, state));
       bot.ai.fireAt = randRange(state, cfg.fireInterval[0], cfg.fireInterval[1]);
