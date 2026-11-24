@@ -160,6 +160,9 @@ export function createNet() {
           i: c.id, x: r2(c.pos.x), z: r2(c.pos.z), yw: r2(c.yaw),
           o: c.opened ? 1 : 0,
         })),
+        lp: state.lootPops.map((p, i) => ({
+          i, x: r2(p.pos.x), z: r2(p.pos.z), s: p.slot,
+        })),
         ev: net.pendingEvents.splice(0),
       },
     });
@@ -249,6 +252,13 @@ export function createNet() {
         z.hp = sz.hp;
         z.alive = !!sz.al;
       }
+    }
+    if (s.lp) {
+      state.lootPops = s.lp.map((p) => ({
+        id: 'pop' + p.i,
+        pos: { x: p.x, y: 1.15, z: p.z },
+        slot: p.s, age: 9,
+      }));
     }
     state.pickups = s.pk.map((p) => ({
       id: p.i, type: 'toast',

@@ -66,11 +66,21 @@ export function createHud() {
         }
       }
       const kh = $('kickhint');
+      const canE = p.alive && !p.zombie && !p.binned && !p.onBalcony;
       const nearButton =
-        p.alive && !p.zombie && state.button &&
+        canE && state.button &&
         distXZ(p.pos, state.button.pos) < CONFIG.zombies.pressRange;
-      kh.textContent = nearButton ? 'E — ВЫПУСТИТЬ ЗОМБИ!' : 'E — ПНУТЬ БАК!';
-      kh.style.opacity = (nearBin || nearButton) ? 1 : 0;
+      const nearPop =
+        canE && (state.lootPops || []).some(
+          (lp) => distXZ(p.pos, lp.pos) < CONFIG.loot.openRange);
+      const nearCrate =
+        canE && (state.crates || []).some(
+          (c) => !c.opened && distXZ(p.pos, c.pos) < CONFIG.loot.openRange);
+      kh.textContent = nearPop ? 'E — ВЗЯТЬ ОРУЖИЕ'
+        : nearButton ? 'E — ВЫПУСТИТЬ ЗОМБИ!'
+        : nearCrate ? 'E — ОТКРЫТЬ ЯЩИК'
+        : 'E — ПНУТЬ БАК!';
+      kh.style.opacity = (nearBin || nearButton || nearPop || nearCrate) ? 1 : 0;
       $('scope').style.opacity = p.mounted != null ? 1 : 0;
 
       if (flashT > 0) {
@@ -133,6 +143,10 @@ export function createHud() {
       } else if (e.type === 'binKicked') {
         const what = e.kind === 'toast' ? 'тостер улетел, тосты на всех!' : 'бак улетел';
         feed(`${e.name} выбыл — ${what}${e.byPlayer ? ' (ваш фраг)' : ''}`);
+      } else if (e.type === 'crateOpen') {
+        feed(e.byPlayer
+          ? 'Ящик открыт — забирайте пушку!'
+          : `${e.name} открыл ящик`);
       } else if (e.type === 'loot') {
         const gun = e.slot === 1 ? 'ХЛАМОМЁТ' : 'ОВОЩЕМЁТ';
         feed(e.byPlayer

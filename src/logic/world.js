@@ -7,7 +7,7 @@ import { rand } from './rng.js';
 import { makeWeapon, stepWeapon, fire, fireSlime } from './weapon.js';
 import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
-import { spawnCrates, tryOpenCrate } from './loot.js';
+import { spawnCrates, tryOpenCrate, tryGrabLoot } from './loot.js';
 import { makeInfection, stepHatch, stepZombie, tryPressButton, tryBite } from './zombies.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
@@ -31,6 +31,7 @@ export function createState(opts = {}) {
     balcony: { angle: 0 },   // respawn platform riding the zone wall
     projectiles: [],
     pickups: [],             // toast slices popped out of kicked toasters
+    lootPops: [],            // guns floating in bubbles above opened crates
     events: [],              // drained by the view each frame
     stats: { kills: 0, shots: 0, damageDealt: 0 },
     humans: [],
@@ -282,6 +283,8 @@ export function step(state, input, dt) {
       integrate(z, dt, state);
     }
     stepHatch(state, dt);
+    for (const lp of state.lootPops) lp.age += dt;
+    separateEntities(state);
   } else {
     // client: snapshot positions arrive in e.tgt — drift toward them
     for (const e of allEntities(state)) {
@@ -380,7 +383,10 @@ function stepHuman(state, p, input, dt) {
     const shot = fire(state, p, input.aim);
     if (shot && p === state.player) state.stats.shots++;
   }
-  if (input.interact && !tryKick(state, p) && !tryPressButton(state, p)) tryOpenCrate(state, p);
+  if (input.interact &&
+      !tryKick(state, p) && !tryGrabLoot(state, p) && !tryPressButton(state, p)) {
+    tryOpenCrate(state, p);
+  }
   integrate(p, dt, state);
 }
 
@@ -404,6 +410,33 @@ function stepZombieHuman(state, p, input, dt) {
 function tickCooldowns(p, dt) {
   stepWeapon(p.weapon, dt);              // shared slime cooldown
   if (p.weaponSlots) for (const w of p.weaponSlots) stepWeapon(w, dt);
+}
+
+// Soft body blocking: two entities overlapping on the ground plane get
+// nudged apart — no stacked zombies or bots clipping through each other.
+// Bins are immovable objects; the other guy takes the whole push.
+function separateEntities(state) {
+  const es = allEntities(state);
+  const rr = CONFIG.player.radius * 2 + 0.15;
+  for (let i = 0; i < es.length; i++) {
+    const a = es[i];
+    if (!a.alive || a.onBalcony) continue;
+    for (let j = i + 1; j < es.length; j++) {
+      const b = es[j];
+      if (!b.alive || b.onBalcony) continue;
+      if (Math.abs(a.pos.y - b.pos.y) > 1.5) continue;   // different floors
+      const dx = b.pos.x - a.pos.x;
+      const dz = b.pos.z - a.pos.z;
+      let d = Math.hypot(dx, dz);
+      if (d >= rr) continue;
+      if (d < 1e-4) d = 1e-4;
+      const push = (rr - d) / 2;
+      const nx = dx / d || 1;
+      const nz = dz / d;
+      if (!a.binned) { a.pos.x -= nx * push; a.pos.z -= nz * push; }
+      if (!b.binned) { b.pos.x += nx * push; b.pos.z += nz * push; }
+    }
+  }
 }
 
 // Balcony ring: several independent arc platforms at a FIXED radius

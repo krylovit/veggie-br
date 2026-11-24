@@ -108,6 +108,8 @@ const nearestPrey = (z, state) => {
   let prey = null, bd = Infinity;
   for (const e of everyone(state)) {
     if (e === z || !e.alive || e.zombie || e.binned || e.onBalcony) continue;
+    // can't bite what's in the air — parachuters and flying bins don't count
+    if (e.chute || (e.binFlyT || 0) > 0 || Math.abs(e.pos.y - z.pos.y) > 3) continue;
     const d = distXZ(z.pos, e.pos);
     if (d < bd) { bd = d; prey = e; }
   }

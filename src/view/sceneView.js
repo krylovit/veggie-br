@@ -373,6 +373,7 @@ export function createView(container) {
     crateProto = { scene: g.scene, anims: g.animations };
   }, undefined, () => {});
   const crateViews = new Map();         // crateId -> {g, mixer, opened}
+  const popViews = new Map();           // lootPop id -> {g} floating gun bubble
 
   // Infection hatch at map centre — a stone-rimmed plate with a heavy
   // lid; pressing the field button slides the lid off and zombies pour.
@@ -969,6 +970,43 @@ export function createView(container) {
         if (!seenPick.has(id)) { scene.remove(m); pickViews.delete(id); }
       }
 
+      // loot pops: the gun that burst out of a crate floats in a bubble
+      // above the lid, spinning gently until somebody grabs it
+      const seenPops = new Set();
+      for (const lp of state.lootPops || []) {
+        seenPops.add(lp.id);
+        let pv = popViews.get(lp.id);
+        if (!pv) {
+          const g = new THREE.Group();
+          const proto = gunProtos[lp.slot];
+          if (proto) {
+            const w = proto.scene.clone();
+            const wb = new THREE.Box3().setFromObject(w);
+            const ws = wb.getSize(new THREE.Vector3());
+            w.scale.setScalar(0.85 / Math.max(ws.x, ws.y, ws.z, 1e-4));
+            g.add(w);
+          }
+          g.add(new THREE.Mesh(
+            new THREE.SphereGeometry(0.62, 16, 12),
+            new THREE.MeshStandardMaterial({
+              color: 0x9adfff, transparent: true, opacity: 0.2,
+              emissive: 0x17445e, depthWrite: false,
+            })));
+          g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+          scene.add(g);
+          pv = { g };
+          popViews.set(lp.id, pv);
+        }
+        pv.g.position.set(
+          lp.pos.x,
+          lp.pos.y + Math.sin(state.time * 2.2 + lp.pos.x) * 0.14,
+          lp.pos.z);
+        pv.g.rotation.y += dtReal * 1.8;
+      }
+      for (const [id, pv] of popViews) {
+        if (!seenPops.has(id)) { scene.remove(pv.g); popViews.delete(id); }
+      }
+
       // weapon crates: clone the GLB per crate, pop the lid on loot
       if (crateProto) {
         for (const c of state.crates) {
@@ -1124,6 +1162,8 @@ export function createView(container) {
       pickViews.clear();
       for (const [, cv] of crateViews) scene.remove(cv.g);
       crateViews.clear();
+      for (const [, pv] of popViews) scene.remove(pv.g);
+      popViews.clear();
       for (const fx of effects) scene.remove(fx.mesh);
       effects.length = 0;
       for (const m of voxelMeshes) scene.remove(m);

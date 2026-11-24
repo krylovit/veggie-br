@@ -5,7 +5,7 @@ import { v3, add, sub, norm, distXZ } from './vec3.js';
 import { rand, randRange } from './rng.js';
 import { makeWeapon, stepWeapon, fire } from './weapon.js';
 import { nearestBin, kickBin } from './bin.js';
-import { nearestCrate, openCrate } from './loot.js';
+import { nearestCrate, openCrate, nearestPop, grabLoot } from './loot.js';
 
 export function makeBots(state, count) {
   const bots = [];
@@ -184,11 +184,14 @@ export function stepBot(bot, state, dt) {
       fire(state, bot, aimAt(bot, target, state));
       bot.ai.fireAt = randRange(state, cfg.fireInterval[0], cfg.fireInterval[1]);
     }
+    // a target high overhead (parachuting in, kicked bin) is shootable
+    // but unreachable — stand ground and aim up instead of circling below
+    const unreachable = target.pos.y - bot.pos.y > 4;
     if (!want) {
-      if (dd > cfg.engageFar) {
+      if (dd > cfg.engageFar && !unreachable) {
         // target in sight but too far — charge it, don't wait for luck
         want = { x: target.pos.x, z: target.pos.z };
-      } else if (engaged) {
+      } else if (engaged && !unreachable) {
         bot.ai.strafeT -= dt;
         if (bot.ai.strafeT <= 0) {
           bot.ai.strafe = -bot.ai.strafe;
@@ -205,14 +208,27 @@ export function stepBot(bot, state, dt) {
     }
   }
 
-  // unarmed and landed? forget the fight — run for the nearest crate
-  // and loot it. Opening takes a moment: stand at the lid and pry.
-  if (!bot.guns[0] && !bot.guns[1] && bot.onGround && !bot.chute) {
+  // needs guns? floating pops beat sealed crates — just grab one. A bot
+  // with one gun only loots when nobody is shooting at it; an unarmed
+  // bot drops everything and runs for loot.
+  const fullyArmed = bot.guns[0] && bot.guns[1];
+  const unarmed = !bot.guns[0] && !bot.guns[1];
+  if (!fullyArmed && bot.onGround && !bot.chute && (unarmed || !engaged)) {
+    const pop = nearestPop(state, bot, CONFIG.loot.botLootRange);
     const c = nearestCrate(state, bot, CONFIG.loot.botLootRange);
-    if (c) {
-      if (distXZ(bot.pos, c.pos) <= CONFIG.loot.openRange) {
+    const popDist = pop ? distXZ(bot.pos, pop.pos) : Infinity;
+    const crateDist = c ? distXZ(bot.pos, c.pos) : Infinity;
+    if (pop && popDist < crateDist) {
+      if (popDist <= CONFIG.loot.openRange && pop.age > 0.5) {
+        grabLoot(state, bot, pop);
+        bot.ai.detour = null;
+      } else {
+        want = { x: pop.pos.x, z: pop.pos.z };
+      }
+    } else if (c) {
+      if (crateDist <= CONFIG.loot.openRange) {
         bot.ai.lootT += dt;
-        want = { x: bot.pos.x, z: bot.pos.z };   // hold position
+        want = { x: bot.pos.x, z: bot.pos.z };   // hold position, pry it open
         if (bot.ai.lootT >= CONFIG.loot.botLootTime) {
           bot.ai.lootT = 0;
           bot.ai.detour = null;

@@ -1,7 +1,7 @@
 // Weapon crates: everyone drops unarmed, guns come from loot boxes.
 // Pure logic — plain state only.
 import { CONFIG } from './config.js';
-import { distXZ, copy } from './vec3.js';
+import { distXZ, copy, v3 } from './vec3.js';
 import { rand } from './rng.js';
 
 export function spawnCrates(state) {
@@ -44,12 +44,44 @@ export function nearestCrate(state, ent, range) {
   return best;
 }
 
-// E on a crate: lid pops, the gun inside joins the inventory — or a
-// small heal when you already carry that model.
+// E on a crate: the lid pops and the gun inside bursts out — it hangs
+// in a bubble above the box until somebody grabs it (another E).
 export function openCrate(state, ent, crate) {
   if (crate.opened) return false;
   crate.opened = true;
-  const slot = crate.loot;
+  state.lootPops.push({
+    id: 'pop_' + crate.id,
+    pos: v3(crate.pos.x, crate.pos.y + 1.15, crate.pos.z),
+    slot: crate.loot,
+    age: 0,
+  });
+  state.events.push({
+    type: 'crateOpen', crate: crate.id, name: ent?.name,
+    pos: copy(crate.pos), byPlayer: ent === state.player,
+  });
+  return true;
+}
+
+export function tryOpenCrate(state, ent) {
+  if (ent.chute || ent.binned || ent.zombie || ent.binFlyT > 0) return null;   // mid-air / monster E does nothing
+  const c = nearestCrate(state, ent, CONFIG.loot.openRange);
+  if (c) openCrate(state, ent, c);
+  return c;
+}
+
+export function nearestPop(state, ent, range) {
+  let best = null, bd = range;
+  for (const p of state.lootPops) {
+    const d = distXZ(ent.pos, p.pos);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+// Grabbing a floating gun: joins the inventory — or a small heal when
+// you already carry that model.
+export function grabLoot(state, ent, pop) {
+  const slot = pop.slot;
   let healed = 0;
   if (ent.guns[slot]) {
     const max = ent.bot ? CONFIG.bots.maxHp : CONFIG.player.maxHp;
@@ -59,17 +91,17 @@ export function openCrate(state, ent, crate) {
     ent.guns[slot] = true;
     ent.slot = slot;
   }
+  state.lootPops = state.lootPops.filter((p) => p !== pop);
   state.events.push({
-    type: 'loot', ent: ent.id, crate: crate.id, slot,
-    healed, name: ent.name, pos: copy(crate.pos),
-    byPlayer: ent === state.player,
+    type: 'loot', ent: ent.id, slot, healed, name: ent.name,
+    pos: copy(pop.pos), byPlayer: ent === state.player,
   });
   return true;
 }
 
-export function tryOpenCrate(state, ent) {
-  if (ent.chute || ent.binned || ent.binFlyT > 0) return null;   // mid-air E does nothing
-  const c = nearestCrate(state, ent, CONFIG.loot.openRange);
-  if (c) openCrate(state, ent, c);
-  return c;
+export function tryGrabLoot(state, ent) {
+  if (ent.chute || ent.binned || ent.zombie || ent.binFlyT > 0) return null;
+  const p = nearestPop(state, ent, CONFIG.loot.openRange);
+  if (p) grabLoot(state, ent, p);
+  return p;
 }
