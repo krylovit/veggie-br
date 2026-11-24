@@ -84,13 +84,14 @@ export const CONFIG = {
   // back out at half health when the timer ends.
   bin: {
     hits: 10,             // stuck veggies needed to become a bin
+    hitDmg: 3,            // hp lost per stuck point (junk counts double)
     duration: 3.0,        // seconds before auto-revive
     reviveHp: 0.5,        // fraction of maxHp restored on revive
     kickRange: 2.4,       // metres — how close you must be to kick
     botSeekRange: 10,     // bots walk to a bin to kick it inside this range
-    flySpeed: 6,          // launched bin: mostly UP, a little sideways
-    flyUp: 19,            // apex ~7 m — the bin really pops
-    flyTime: 2.6,         // seconds the kicked bin tumbles before scoring
+    flySpeed: 9,          // launched bin: mostly UP, a little sideways
+    flyUp: 34,            // apex ~22 m — a real launch over the map
+    flyTime: 3.4,         // seconds the kicked bin tumbles before scoring
     bounce: 0.45,         // ground bounce damping on landing
     spinRate: 7,          // tumble speed (rad/s) while flying
   },

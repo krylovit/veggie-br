@@ -839,9 +839,17 @@ export function createView(container) {
         camera.position.y + aim.y,
         camera.position.z + aim.z);
       camera.lookAt(tmpV);
-      // kicked as a bin — the world somersaults around the victim
-      if ((state.player.binFlyT || 0) > 0) {
-        camera.rotateZ(state.time * CONFIG.bin.spinRate);
+      // kicked as a bin — one slow somersault + fov punch, you see
+      // the map drop away instead of a motion-blurred spin
+      const flyT = state.player.binFlyT || 0;
+      if (flyT > 0) {
+        const el = CONFIG.bin.flyTime - flyT;
+        camera.rotateZ(el * 1.9);
+        camera.fov = 95;
+        camera.updateProjectionMatrix();
+      } else if (camera.fov !== CONFIG.camera.fov) {
+        camera.fov = CONFIG.camera.fov;
+        camera.updateProjectionMatrix();
       }
     },
 

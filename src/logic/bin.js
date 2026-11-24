@@ -12,6 +12,7 @@ export function stickVeggie(state, ent, veggie, attackerId, weight = 1) {
   for (let i = 0; i < weight && ent.vegStuck.length < CONFIG.bin.hits; i++) {
     ent.vegStuck.push(veggie);
   }
+  ent.hp -= weight * CONFIG.bin.hitDmg;
   state.events.push({
     type: 'hit',
     pos: add(ent.pos, { x: 0, y: 1.2, z: 0 }),
@@ -21,6 +22,13 @@ export function stickVeggie(state, ent, veggie, attackerId, weight = 1) {
     byPlayer: attackerId === state.player.id,
   });
   if (attackerId === state.player.id) state.stats.damageDealt++;
+  if (ent.hp <= 0) {
+    ent.hp = 0;
+    if (attackerId === state.player.id) state.stats.kills++;
+    state.events.push({ type: 'kill', victim: ent.id, attacker: attackerId, name: ent.name, veggie });
+    killEntity(state, ent);
+    return;
+  }
   if (ent.vegCount >= CONFIG.bin.hits) {
     const kind = CONFIG.junk.order.includes(veggie) ? 'toast' : 'veg';
     transformToBin(state, ent, attackerId, kind);
