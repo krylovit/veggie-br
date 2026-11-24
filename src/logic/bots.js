@@ -96,6 +96,7 @@ function nearestEnemy(bot, state) {
   };
   for (const b of state.humans) consider(b);
   for (const b of state.bots) consider(b);
+  for (const z of state.zombies || []) consider(z);   // the horde is fair game
   return bd < CONFIG.bots.aggroRange * 1.5 ? best : null;
 }
 

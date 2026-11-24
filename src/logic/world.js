@@ -8,6 +8,7 @@ import { makeWeapon, stepWeapon, fire, fireSlime } from './weapon.js';
 import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
 import { spawnCrates, tryOpenCrate } from './loot.js';
+import { makeInfection, stepHatch, stepZombie, tryPressButton, tryBite } from './zombies.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
 // opts: {seed, humans:[{id,name}], myId, netRole} — defaults give the
@@ -51,6 +52,7 @@ export function createState(opts = {}) {
   state.voxels = map.voxels;
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));
   state.crates = spawnCrates(state);
+  makeInfection(state);
   // stable net ordering: humans first (join order), then bots
   state.netEnts = [...state.humans, ...state.bots];
   state.netEnts.forEach((e, i) => { e.netIdx = i; });
@@ -59,7 +61,7 @@ export function createState(opts = {}) {
 
 // Every entity the sim knows about — humans (local + remote) and bots.
 export function allEntities(state) {
-  return state.humans.concat(state.bots);
+  return state.humans.concat(state.bots, state.zombies || []);
 }
 
 export { nearestCrate, openCrate, tryOpenCrate } from './loot.js';
@@ -102,6 +104,8 @@ function makeHuman(state, id, name, i, n) {
     weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie gun, [1] junk gun
     guns: [false, false],    // owned weapons — everyone lands unarmed
     slot: 0,
+    zombie: false,           // bitten: body stays, the hunger drives now
+    biteT: 0,
   };
 }
 
@@ -266,9 +270,25 @@ export function step(state, input, dt) {
       } else if (b.slimedTimer > 0) {
         b.slimedTimer -= dt;       // glued mid-air — frozen where hit
       } else if (!b.onBalcony) {
-        stepBot(b, state, dt);
+        if (b.zombie) stepZombie(b, state, dt);
+        else stepBot(b, state, dt);
         integrate(b, dt, state);
       }
+    }
+    for (const z of state.zombies) {
+      if (!z.alive) continue;
+      if (z.slimedTimer > 0) { z.slimedTimer -= dt; continue; }   // cannon glue freezes zombies too
+      stepZombie(z, state, dt);
+      integrate(z, dt, state);
+    }
+    stepHatch(state, dt);
+  } else {
+    // client: snapshot positions arrive in e.tgt — drift toward them
+    for (const e of allEntities(state)) {
+      if (!e.tgt) continue;
+      e.pos.x += (e.tgt.x - e.pos.x) * Math.min(1, dt * 8);
+      e.pos.y += (e.tgt.y - e.pos.y) * Math.min(1, dt * 8);
+      e.pos.z += (e.tgt.z - e.pos.z) * Math.min(1, dt * 8);
     }
   }
   stepBalcony(state, dt);
@@ -325,6 +345,10 @@ function stepHuman(state, p, input, dt) {
     stepPlayerBalcony(state, p, input, dt);
     return;
   }
+  if (p.zombie) {
+    stepZombieHuman(state, p, input, dt);
+    return;
+  }
   const cfg = CONFIG.player;
 
   // weapon switching: 1/2 selects a slot, wheel cycles
@@ -356,7 +380,24 @@ function stepHuman(state, p, input, dt) {
     const shot = fire(state, p, input.aim);
     if (shot && p === state.player) state.stats.shots++;
   }
-  if (input.interact && !tryKick(state, p)) tryOpenCrate(state, p);
+  if (input.interact && !tryKick(state, p) && !tryPressButton(state, p)) tryOpenCrate(state, p);
+  integrate(p, dt, state);
+}
+
+// Player-turned-zombie: guns gone, legs faster, LMB/E bites anyone in
+// reach. Still a player — lives and balcony rules unchanged.
+function stepZombieHuman(state, p, input, dt) {
+  const cfg = CONFIG.zombies;
+  p.biteT = Math.max(0, (p.biteT || 0) - dt);
+  p.vel.x = input.mx * cfg.speed;
+  p.vel.z = input.mz * cfg.speed;
+  if (input.jump && p.onGround) {
+    p.vel.y = CONFIG.player.jumpSpeed;
+    p.onGround = false;
+  }
+  if (input.aim) p.yaw = Math.atan2(input.aim.x, input.aim.z);
+  stepWeapon(p.weapon, dt);
+  if (input.fire || input.interact) tryBite(state, p);
   integrate(p, dt, state);
 }
 
@@ -656,6 +697,10 @@ function stepProjectiles(state, dt) {
       p.pos = copy(hit.point);
       if (hit.kind === 'entity') {
         if (p.type === 'slime') slimeHit(state, hit.ent, p.owner);
+        else if (hit.ent.zombie) {
+          // zombies don't bin — hits just chew through their HP
+          damage(state, hit.ent, 3 * (p.sticks ?? 1), p.owner, p.type);
+        }
         else stickVeggie(state, hit.ent, p.type, p.owner, p.sticks ?? 1);
       }
       // misses stay silent — no splat clutter
@@ -750,7 +795,8 @@ function stepZone(state, dt) {
 function checkPhase(state) {
   let next = null;
   if (!state.player.alive) next = 'lost';
-  else if (allEntities(state).every((e) => e === state.player || !e.alive)) next = 'won';
+  // zombies don't count as surviving opponents — kill or convert everyone
+  else if (allEntities(state).every((e) => e === state.player || !e.alive || e.zombie)) next = 'won';
   if (next) {
     state.phase = next;
     state.events.push({ type: 'phase', phase: next });

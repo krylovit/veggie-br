@@ -135,6 +135,8 @@ export function killEntity(state, ent) {
   ent.mounted = null;
   ent.vegCount = 0;
   ent.vegStuck = [];
+  ent.zombie = false;      // death cures the infection — redeploy human again
+  ent.biteT = 0;
   if (ent.lives <= 0) {
     ent.alive = false;
     ent.onBalcony = false;

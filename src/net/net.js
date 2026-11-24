@@ -140,7 +140,14 @@ export function createNet() {
           vc: e.vegCount, vs: e.vegStuck,
           lv: e.lives, w: e.slot || 0,
           g: (e.guns ? (e.guns[0] ? 1 : 0) | (e.guns[1] ? 2 : 0) : 3),
+          zm: e.zombie ? 1 : 0,
         })),
+        zb: state.zombies.map((z, i) => ({
+          i, x: r2(z.pos.x), y: r2(z.pos.y), z: r2(z.pos.z),
+          yw: r2(z.yaw), hp: Math.round(z.hp), al: z.alive ? 1 : 0,
+        })),
+        ht: state.hatch.open ? 1 : 0,
+        bt: state.button.pressed ? 1 : 0,
         pr: state.projectiles.map((p) => ({
           i: p.id, t: p.type,
           x: r2(p.pos.x), y: r2(p.pos.y), z: r2(p.pos.z),
@@ -200,6 +207,7 @@ export function createNet() {
       e.lives = se.lv;
       e.slot = se.w || 0;
       if (se.g != null) e.guns = [!!(se.g & 1), !!(se.g & 2)];
+      e.zombie = !!se.zm;
       if (!e.alive) e.vel = { x: 0, y: 0, z: 0 };
     }
     // projectiles: host list wins; keep only very fresh local shots that
@@ -219,6 +227,29 @@ export function createNet() {
       if (p.owner === myId && (p.la || 0) < 0.45 && !snapIds.has(p.id)) merged.push(p);
     }
     state.projectiles = merged;
+    // infection: hatch, button and the zombie wave ride the snapshot
+    if (s.ht != null) state.hatch.open = !!s.ht;
+    if (s.bt != null) state.button.pressed = !!s.bt;
+    if (s.zb) {
+      for (const sz of s.zb) {
+        let z = state.zombies[sz.i];
+        if (!z) {
+          z = state.zombies[sz.i] = {
+            id: 'z' + sz.i, bot: true, zombie: true, name: 'Зомби',
+            pos: { x: sz.x, y: sz.y, z: sz.z }, vel: { x: 0, y: 0, z: 0 },
+            yaw: sz.yw, hp: sz.hp, alive: true,
+            chute: false, binned: false, binFlyT: 0,
+            vegCount: 0, vegStuck: [], lives: 0, onBalcony: false,
+            slimedTimer: 0, mounted: null, engaged: true,
+            guns: [false, false], slot: 0, snapDriven: true,
+          };
+        }
+        z.tgt = { x: sz.x, y: sz.y, z: sz.z };
+        z.yaw = sz.yw;
+        z.hp = sz.hp;
+        z.alive = !!sz.al;
+      }
+    }
     state.pickups = s.pk.map((p) => ({
       id: p.i, type: 'toast',
       pos: { x: p.x, y: p.y, z: p.z },

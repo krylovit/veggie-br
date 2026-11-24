@@ -60,12 +60,17 @@ export function createHud() {
         ? `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp} · овощей на вас: ${p.vegCount}/${CONFIG.bin.hits}`
         : `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp}`;
       let nearBin = false;
-      if (p.alive && !p.binned && !p.onBalcony) {
+      if (p.alive && !p.binned && !p.onBalcony && !p.zombie) {
         for (const b of state.humans.concat(state.bots)) {
           if (b.binned && distXZ(p.pos, b.pos) < CONFIG.bin.kickRange) { nearBin = true; break; }
         }
       }
-      $('kickhint').style.opacity = nearBin ? 1 : 0;
+      const kh = $('kickhint');
+      const nearButton =
+        p.alive && !p.zombie && state.button &&
+        distXZ(p.pos, state.button.pos) < CONFIG.zombies.pressRange;
+      kh.textContent = nearButton ? 'E — ВЫПУСТИТЬ ЗОМБИ!' : 'E — ПНУТЬ БАК!';
+      kh.style.opacity = (nearBin || nearButton) ? 1 : 0;
       $('scope').style.opacity = p.mounted != null ? 1 : 0;
 
       if (flashT > 0) {
@@ -78,7 +83,10 @@ export function createHud() {
       }
 
       const msg = $('msg');
-      if ((p.binFlyT || 0) > 0) {
+      if (p.zombie && p.alive) {
+        msg.innerHTML = '<div class="big">ВЫ — ЗОМБИ</div>' +
+          '<div class="small">ЛКМ / E — укусить · оружия нет · смерть излечивает</div>';
+      } else if ((p.binFlyT || 0) > 0) {
         msg.innerHTML = '<div class="big">ВАС ПНУЛИ!</div><div class="small">летите в баке…</div>';
       } else if (state.phase === 'won') {
         msg.innerHTML = '<div class="big">ПОБЕДА!</div><div class="small">Все овощи съедены. R — заново</div>';
@@ -147,6 +155,12 @@ export function createHud() {
         feed(e.target === 'player'
           ? 'Вы вылезли из бака (половина HP)'
           : `${e.name} вылез из бака (половина HP)`);
+      } else if (e.type === 'button') {
+        feed(e.byPlayer ? 'Вы ВЫПУСТИЛИ ЗОМБИ!' : `${e.name} выпустил зомби!`);
+      } else if (e.type === 'infected') {
+        feed(e.target === 'player'
+          ? 'ВАС УКУСИЛИ — вы теперь зомби!'
+          : `${e.name} стал зомби!`);
       } else if (e.type === 'kill') {
         feed(e.attacker === 'zone'
           ? `${e.name} съеден зоной`

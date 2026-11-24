@@ -77,6 +77,21 @@ export const CONFIG = {
     consolationHp: 12,  // already own the rolled gun? heal instead
     vegOdds: 0.6,       // chance the crate holds the veggie launcher
   },
+  // Infection mode (test): a hatch in the map centre + a big red button
+  // on the field. Players press the button, the hatch bursts open and a
+  // wave of zombies hops out. One bite converts you — you keep your
+  // lives, but now you hunt your former friends. Death cures.
+  zombies: {
+    waveSize: 6,           // zombies per button press
+    spawnGap: 0.55,        // seconds between zombies popping out
+    hp: 45,
+    speed: 8.4,            // a bit faster than a walking player — still outrunnable in a sprint
+    biteRange: 1.7,
+    biteCooldown: 0.8,
+    hopOut: 7,             // launch velocity bursting from the hatch
+    buttonPos: { x: 16, z: -14 },
+    pressRange: 2.8,
+  },
   // Junk-binned victims turn into a BIG TOASTER instead of a veggie bin.
   // Kicking it pops out toast slices — pickups that heal whoever grabs
   // them. The kick itself still scores the kill as usual.

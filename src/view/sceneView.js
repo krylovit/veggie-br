@@ -346,15 +346,17 @@ export function createView(container) {
     'character-male-g', 'character-female-a', 'character-female-b',
     'character-female-c', 'character-female-d', 'character-female-e',
     'character-female-f',
+    'character-zombie',
   ];
+  const ZOMBIE_IDX = CHAR_FILES.length - 1;
   const charProtos = new Array(CHAR_FILES.length).fill(null);  // {scene, anims}
   CHAR_FILES.forEach((name, i) => {
     gltf.load(`assets/models/characters/${name}.glb`, (g) => {
       charProtos[i] = { scene: g.scene, anims: g.animations };
     }, undefined, () => {});
   });
-  const charIdxFor = (e) =>
-    ((e.netIdx != null ? e.netIdx : 0) % CHAR_FILES.length + CHAR_FILES.length) % CHAR_FILES.length;
+  const charIdxFor = (e) => e.zombie ? ZOMBIE_IDX :
+    ((e.netIdx != null ? e.netIdx : 0) % ZOMBIE_IDX + ZOMBIE_IDX) % ZOMBIE_IDX;
   const gunProtos = [null, null];       // slot -> {scene, wlen}
   const gunWlen = (g) => {
     const wb = new THREE.Box3().setFromObject(g.scene);
@@ -371,6 +373,37 @@ export function createView(container) {
     crateProto = { scene: g.scene, anims: g.animations };
   }, undefined, () => {});
   const crateViews = new Map();         // crateId -> {g, mixer, opened}
+
+  // Infection hatch at map centre — a stone-rimmed plate with a heavy
+  // lid; pressing the field button slides the lid off and zombies pour.
+  const hatchG = new THREE.Group();
+  const hatchRing = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.7, 0.4, 16), MATS.stone);
+  hatchRing.position.y = 0.2;
+  const hatchHole = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.95, 1.95, 0.42, 16),
+    new THREE.MeshStandardMaterial({ color: 0x0b0b0b }));
+  hatchHole.position.y = 0.2;
+  const hatchDoor = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 0.22, 16), MATS.bin);
+  hatchDoor.position.y = 0.45;
+  hatchG.add(hatchRing, hatchHole, hatchDoor);
+  hatchG.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(hatchG);
+  let hatchSlide = 0;
+
+  // The big red button on a post — players press it (E) to open the hatch.
+  const buttonG = new THREE.Group();
+  const btnPost = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.15, 0.55), MATS.stone);
+  btnPost.position.y = 0.57;
+  const btnDome = new THREE.Mesh(
+    new THREE.SphereGeometry(0.32, 14, 10),
+    new THREE.MeshStandardMaterial({ color: 0xe23b2e, emissive: 0x771111 }));
+  btnDome.position.y = 1.28;
+  const btnBase = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.18, 12), MATS.bin);
+  btnBase.position.y = 1.1;
+  buttonG.add(btnPost, btnBase, btnDome);
+  buttonG.position.set(CONFIG.zombies.buttonPos.x, 0, CONFIG.zombies.buttonPos.z);
+  buttonG.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  scene.add(buttonG);
 
   const ANIM_NAMES = ['walk', 'holding-right', 'holding-right-shoot', 'fall', 'idle'];
   // Hand-fit per weapon slot — exported from fit-viewer.html.
@@ -398,8 +431,13 @@ export function createView(container) {
 
   function upgradeToSoldier(g, e) {
     const proto = charProtos[charIdxFor(e)];
-    if (!proto || g.userData.glb) return;
+    if (!proto) return;
+    // rebuild when the body turns into a zombie (or gets cured by death)
+    if (g.userData.glb && g.userData.charZombie === !!e.zombie) return;
     g.userData.glb = true;
+    g.userData.charZombie = !!e.zombie;
+    g.userData.anim = null;
+    g.userData.guns = null;
     const color = e.bot ? botColor(e.id) : 0x7ec9ff;
     const model = cloneSkeleton(proto.scene);
     const bb = new THREE.Box3().setFromObject(model);
@@ -761,7 +799,7 @@ export function createView(container) {
       anim.mixer.update(dt);
       if (g.userData.guns) {
         const cur = e.slot || 0;
-        g.userData.guns.forEach((gun, i) => { if (gun) gun.visible = i === cur; });
+        g.userData.guns.forEach((gun, i) => { if (gun) gun.visible = i === cur && (!e.guns || e.guns[i]) && !e.zombie; });
         // the visible gun re-fits for the current clip (hand pose shifts)
         const fg = g.userData.guns[cur];
         const gfit = GUN_FIT[cur];
@@ -883,7 +921,7 @@ export function createView(container) {
 
     sync(state, aim, dtReal) {
       // player is first-person — no self mesh; everyone else gets capsules
-      for (const e of state.humans.concat(state.bots)) {
+      for (const e of state.humans.concat(state.bots, state.zombies || [])) {
         if (e === state.player) {
           const pg = entities.get(e.id);
           if (pg) { scene.remove(pg); entities.delete(e.id); }
@@ -961,6 +999,18 @@ export function createView(container) {
           cv.mixer.update(dtReal);
         }
       }
+
+      // hatch lid slides off once the button is pressed
+      hatchSlide += (((state.hatch && state.hatch.open) ? 1 : 0) - hatchSlide) * Math.min(1, dtReal * 3);
+      hatchDoor.position.x = -3.6 * hatchSlide;
+      hatchDoor.position.y = 0.45 + hatchSlide * 0.4;
+      hatchDoor.rotation.z = hatchSlide * 0.35;
+      // button dome: armed red → spent grey
+      if (state.button && state.button.pressed) {
+        btnDome.material.color.setHex(0x4fd35a);
+        btnDome.material.emissive.setHex(0x0d3d10);
+      }
+      btnDome.position.y = 1.28 + Math.sin(state.time * 4) * 0.03;
 
       zoneWall.scale.set(state.zone.radius, 1, state.zone.radius);
       zoneRing.scale.set(state.zone.radius, state.zone.radius, 1);
