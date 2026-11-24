@@ -248,6 +248,9 @@ export function createView(container) {
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -95, right: 95, top: 95, bottom: -95, far: 220 });
   sun.shadow.camera.updateProjectionMatrix();
+  // layer 1 = the local player's own body: skipped by the main camera,
+  // kept in the shadow pass so your fighter still casts a live shadow
+  sun.shadow.camera.layers.enable(1);
   scene.add(sun);
 
   const groundTex = TEX.grass.clone();
@@ -1104,20 +1107,14 @@ export function createView(container) {
         ferris.wheel.rotation.z += dtReal * 0.12;
         for (const cab of ferris.cabs) cab.rotation.z = -ferris.wheel.rotation.z;
       }
-      // player is first-person: the mesh stays invisible on screen
-      // (colorWrite off) but keeps casting its animated shadow — you
-      // see your own fighter's silhouette on the ground
+      // player is first-person: the mesh goes to layer 1 — invisible to
+      // the main camera but still rendered into the sun's shadow map,
+      // so your own fighter casts a live silhouette on the ground
       for (const e of state.humans.concat(state.bots, state.zombies || [])) {
         syncEntity(e, 0, state.time, dtReal);
         if (e === state.player) {
           const pg = entities.get(e.id);
-          if (pg) pg.traverse((o) => {
-            const m = o.material;
-            if (m) {
-              if (Array.isArray(m)) m.forEach((x) => { x.colorWrite = false; x.depthWrite = false; });
-              else { m.colorWrite = false; m.depthWrite = false; }
-            }
-          });
+          if (pg) pg.traverse((o) => o.layers.set(1));
         }
       }
 
