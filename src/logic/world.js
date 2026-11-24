@@ -9,6 +9,7 @@ import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
 import { spawnCrates, tryOpenCrate, tryGrabLoot } from './loot.js';
 import { makeInfection, stepHatch, stepZombie, tryPressButton, tryBite } from './zombies.js';
+import { buildMap } from './map.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
 // opts: {seed, humans:[{id,name}], myId, netRole} — defaults give the
@@ -108,140 +109,6 @@ function makeHuman(state, id, name, i, n) {
     zombie: false,           // bitten: body stays, the hunger drives now
     biteT: 0,
   };
-}
-
-// The map is built entirely of 1 m cubes on an integer grid — like
-// Minecraft/Roblox parts. Each structure emits aligned AABB collision
-// parts plus one voxel per unit cell for rendering.
-function buildMap(state) {
-  const obstacles = [];
-  const voxels = [];
-  const placed = [];   // {x0,z0,x1,z1} footprints for overlap rejection
-
-  // addBox: coords are inclusive-exclusive cell indices, 1 unit = 1 cube
-  const box = (x0, y0, z0, x1, y1, z1, mat) => {
-    obstacles.push({ min: v3(x0, y0, z0), max: v3(x1, y1, z1), mat });
-    for (let x = x0; x < x1; x++)
-      for (let y = y0; y < y1; y++)
-        for (let z = z0; z < z1; z++)
-          voxels.push({ x: x + 0.5, y: y + 0.5, z: z + 0.5, mat });
-  };
-
-  const clearOf = (x0, z0, x1, z1) => {
-    if (x0 - 4 < CONFIG.player.spawn.x && x1 + 4 > CONFIG.player.spawn.x &&
-        z0 - 4 < CONFIG.player.spawn.z && z1 + 4 > CONFIG.player.spawn.z) return false;
-    for (const p of placed) {
-      if (x0 - 2 < p.x1 && x1 + 2 > p.x0 && z0 - 2 < p.z1 && z1 + 2 > p.z0) return false;
-    }
-    return true;
-  };
-
-  const place = (w, d, fn) => {
-    for (let tries = 0; tries < 8; tries++) {
-      const a = rand(state) * Math.PI * 2;
-      const r = 16 + rand(state) * 78;
-      const x0 = Math.round(Math.cos(a) * r);
-      const z0 = Math.round(Math.sin(a) * r);
-      if (!clearOf(x0, z0, x0 + w, z0 + d)) continue;
-      placed.push({ x0, z0, x1: x0 + w, z1: z0 + d });
-      fn(x0, z0);
-      return;
-    }
-  };
-
-  // Brick ruin: 6×6 footprint, 3-high walls, door gap south, window slit east
-  const ruin = (bx, bz) => {
-    box(bx, 0, bz, bx + 6, 3, bz + 1, 'brick');            // north wall
-    box(bx, 0, bz + 5, bx + 2, 3, bz + 6, 'brick');        // south wall, left of door
-    box(bx + 4, 0, bz + 5, bx + 6, 3, bz + 6, 'brick');    // south wall, right of door
-    box(bx, 0, bz + 1, bx + 1, 3, bz + 5, 'brick');        // west wall
-    box(bx + 5, 0, bz + 1, bx + 6, 1, bz + 5, 'brick');    // east wall sill (climbable)
-    box(bx + 5, 2, bz + 1, bx + 6, 3, bz + 5, 'brick');    // east wall above window row
-    box(bx + 1, 0, bz + 1, bx + 2, 1, bz + 5, 'dirt');     // dirt strip inside
-  };
-  // Sand staircase: 4×4 → 2×2 → 1×1, one-cube steps you can walk/jump up
-  const sandPile = (bx, bz) => {
-    box(bx, 0, bz, bx + 4, 1, bz + 4, 'sand');
-    box(bx + 1, 1, bz + 1, bx + 3, 2, bz + 3, 'sand');
-    box(bx + 1, 2, bz + 1, bx + 2, 3, bz + 2, 'sand');
-  };
-  // Dirt mound: low flat platform
-  const dirtMound = (bx, bz) => box(bx, 0, bz, bx + 4, 1, bz + 3, 'dirt');
-  // Grass pillar: 2-high stack — barely jumpable, blocks shots
-  const grassPillar = (bx, bz) => box(bx, 0, bz, bx + 1, 2, bz + 1, 'grass');
-
-  // Tree: log trunk + leaf canopy — solid cover you can walk under
-  const tree = (bx, bz) => {
-    const h = 3 + Math.floor(rand(state) * 2);    // trunk 3-4 m
-    box(bx + 1, 0, bz + 1, bx + 2, h, bz + 2, 'log');
-    box(bx, h - 1, bz, bx + 3, h + 1, bz + 3, 'leaf');
-    box(bx + 1, h + 1, bz + 1, bx + 2, h + 2, bz + 2, 'leaf');
-  };
-  // Big house ruin: 8×8, 4-high walls, south door, east window strip,
-  // a collapsed roof slab over one half
-  const house = (bx, bz) => {
-    box(bx, 0, bz, bx + 8, 4, bz + 1, 'brick');
-    box(bx, 0, bz + 7, bx + 3, 4, bz + 8, 'brick');
-    box(bx + 5, 0, bz + 7, bx + 8, 4, bz + 8, 'brick');
-    box(bx, 0, bz + 1, bx + 1, 4, bz + 7, 'brick');
-    box(bx + 7, 0, bz + 1, bx + 8, 2, bz + 7, 'brick');
-    box(bx + 7, 3, bz + 1, bx + 8, 4, bz + 7, 'brick');
-    box(bx + 1, 4, bz + 1, bx + 4, 5, bz + 7, 'brick');
-  };
-  // Well: brick ring, two log posts, wooden roof
-  const well = (bx, bz) => {
-    box(bx, 0, bz, bx + 3, 1, bz + 1, 'brick');
-    box(bx, 0, bz + 2, bx + 3, 1, bz + 3, 'brick');
-    box(bx, 0, bz + 1, bx + 1, 1, bz + 2, 'brick');
-    box(bx + 2, 0, bz + 1, bx + 3, 1, bz + 2, 'brick');
-    box(bx, 1, bz, bx + 1, 3, bz + 1, 'log');
-    box(bx + 2, 1, bz, bx + 3, 3, bz + 1, 'log');
-    box(bx, 3, bz, bx + 3, 4, bz + 3, 'log');
-  };
-  // Watchtower: four log pillars + stone platform with a parapet —
-  // a landmark and a jump-up sniper spot
-  const tower = (bx, bz) => {
-    for (const [px, pz] of [[0, 0], [3, 0], [0, 3], [3, 3]]) {
-      box(bx + px, 0, bz + pz, bx + px + 1, 5, bz + pz + 1, 'log');
-    }
-    box(bx, 5, bz, bx + 4, 6, bz + 4, 'stone');
-    box(bx, 6, bz, bx + 4, 7, bz + 1, 'stone');
-    box(bx, 6, bz + 3, bx + 4, 7, bz + 4, 'stone');
-    box(bx, 6, bz + 1, bx + 1, 7, bz + 3, 'stone');
-    box(bx + 3, 6, bz + 1, bx + 4, 7, bz + 3, 'stone');
-  };
-  // Roads: flat gravel strips crossing at the zone center — render
-  // only (no collision, they're pavement, not walls)
-  const half = CONFIG.world.size / 2 - 4;
-  const road = (x0, z0, x1, z1) => {
-    for (let x = x0; x < x1; x++) {
-      for (let z = z0; z < z1; z++) {
-        voxels.push({ x: x + 0.5, y: 0.07, z: z + 0.5, mat: 'path', sy: 0.14 });
-      }
-    }
-  };
-  road(-half, -2, half, 3);   // east-west through the middle
-  road(-2, -half, 3, half);   // north-south through the middle
-
-  place(8, 8, house);
-  place(6, 6, ruin);
-  place(6, 6, ruin);
-  place(6, 6, ruin);
-  place(4, 4, sandPile);
-  place(4, 4, sandPile);
-  place(4, 4, sandPile);
-  place(3, 3, well);
-  place(3, 3, well);
-  place(4, 4, tower);
-  place(4, 4, tower);
-  place(4, 3, dirtMound);
-  place(4, 3, dirtMound);
-  place(4, 3, dirtMound);
-  place(4, 3, dirtMound);
-  for (let i = 0; i < 10; i++) place(1, 1, grassPillar);
-  for (let i = 0; i < 16; i++) place(3, 3, tree);
-
-  return { obstacles, voxels };
 }
 
 // input: {mx, mz, jump, sprint, fire, kick, aim:{x,y,z}, active}

@@ -89,7 +89,7 @@ export const CONFIG = {
     biteRange: 1.7,
     biteCooldown: 0.8,
     hopOut: 7,             // launch velocity bursting from the hatch
-    buttonPos: { x: 16, z: -14 },
+    buttonPos: { x: 9, z: -9 },    // on the plaza edge, next to the hatch
     pressRange: 2.8,
   },
   // Junk-binned victims turn into a BIG TOASTER instead of a veggie bin.
