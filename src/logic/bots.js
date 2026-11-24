@@ -214,7 +214,7 @@ export function stepBot(bot, state, dt) {
   const fullyArmed = bot.guns[0] && bot.guns[1];
   const unarmed = !bot.guns[0] && !bot.guns[1];
   if (!fullyArmed && bot.onGround && !bot.chute && (unarmed || !engaged)) {
-    const pop = nearestPop(state, bot, CONFIG.loot.botLootRange);
+    const pop = nearestPop(state, bot, CONFIG.loot.botLootRange, true);   // skip guns it owns
     const c = nearestCrate(state, bot, CONFIG.loot.botLootRange);
     const popDist = pop ? distXZ(bot.pos, pop.pos) : Infinity;
     const crateDist = c ? distXZ(bot.pos, c.pos) : Infinity;

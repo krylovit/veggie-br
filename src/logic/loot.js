@@ -69,31 +69,25 @@ export function tryOpenCrate(state, ent) {
   return c;
 }
 
-export function nearestPop(state, ent, range) {
+export function nearestPop(state, ent, range, skipOwned) {
   let best = null, bd = range;
   for (const p of state.lootPops) {
+    if (skipOwned && ent.guns && ent.guns[p.slot]) continue;
     const d = distXZ(ent.pos, p.pos);
     if (d < bd) { bd = d; best = p; }
   }
   return best;
 }
 
-// Grabbing a floating gun: joins the inventory — or a small heal when
-// you already carry that model.
+// Grabbing a floating gun joins the inventory — a duplicate model
+// refuses to be picked up and just keeps floating.
 export function grabLoot(state, ent, pop) {
-  const slot = pop.slot;
-  let healed = 0;
-  if (ent.guns[slot]) {
-    const max = ent.bot ? CONFIG.bots.maxHp : CONFIG.player.maxHp;
-    healed = Math.max(0, Math.min(CONFIG.loot.consolationHp, max - ent.hp));
-    ent.hp += healed;
-  } else {
-    ent.guns[slot] = true;
-    ent.slot = slot;
-  }
+  if (ent.guns[pop.slot]) return false;
+  ent.guns[pop.slot] = true;
+  ent.slot = pop.slot;
   state.lootPops = state.lootPops.filter((p) => p !== pop);
   state.events.push({
-    type: 'loot', ent: ent.id, slot, healed, name: ent.name,
+    type: 'loot', ent: ent.id, slot: pop.slot, name: ent.name,
     pos: copy(pop.pos), byPlayer: ent === state.player,
   });
   return true;
@@ -101,7 +95,7 @@ export function grabLoot(state, ent, pop) {
 
 export function tryGrabLoot(state, ent) {
   if (ent.chute || ent.binned || ent.zombie || ent.binFlyT > 0) return null;
-  const p = nearestPop(state, ent, CONFIG.loot.openRange);
+  const p = nearestPop(state, ent, CONFIG.loot.openRange, true);   // skip guns we own
   if (p) grabLoot(state, ent, p);
   return p;
 }

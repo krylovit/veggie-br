@@ -70,17 +70,19 @@ export function createHud() {
       const nearButton =
         canE && state.button &&
         distXZ(p.pos, state.button.pos) < CONFIG.zombies.pressRange;
-      const nearPop =
-        canE && (state.lootPops || []).some(
+      const popNear =
+        canE && (state.lootPops || []).find(
           (lp) => distXZ(p.pos, lp.pos) < CONFIG.loot.openRange);
+      const dupPop = popNear && p.guns && p.guns[popNear.slot];
       const nearCrate =
         canE && (state.crates || []).some(
           (c) => !c.opened && distXZ(p.pos, c.pos) < CONFIG.loot.openRange);
-      kh.textContent = nearPop ? 'E — ВЗЯТЬ ОРУЖИЕ'
+      kh.textContent = popNear
+          ? (dupPop ? 'УЖЕ ЕСТЬ ТАКАЯ ПУШКА' : 'E — ВЗЯТЬ ОРУЖИЕ')
         : nearButton ? 'E — ВЫПУСТИТЬ ЗОМБИ!'
         : nearCrate ? 'E — ОТКРЫТЬ ЯЩИК'
         : 'E — ПНУТЬ БАК!';
-      kh.style.opacity = (nearBin || nearButton || nearPop || nearCrate) ? 1 : 0;
+      kh.style.opacity = (nearBin || nearButton || popNear || nearCrate) ? 1 : 0;
       $('scope').style.opacity = p.mounted != null ? 1 : 0;
 
       if (flashT > 0) {
