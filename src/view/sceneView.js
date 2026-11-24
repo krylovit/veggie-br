@@ -356,8 +356,14 @@ export function createView(container) {
   // Hand-fit per weapon slot — exported from fit-viewer.html.
   // Per-anim `fits` override `default` (hands sit differently per clip).
   const GUN_FIT = [
-    {   // ovoschemet (slot 0) — placeholder, not hand-fit yet
-      default: { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: 1.571, rz: 0, len: 0.95 },
+    {   // ovoschemet (slot 0) — same hand fit as the junk gun
+      default: { ax: -0.315, ay: 0.045, az: 0.125, rx: -0.061, ry: 2.007, rz: 0, len: 0.80 },
+      fits: {
+        'walk':                 { ax: -0.265, ay: 0.065, az: 0.085, rx: 0,      ry: 1.894, rz: 0, len: 0.75 },
+        'idle':                 { ax: -0.315, ay: 0.045, az: 0.125, rx: -0.061, ry: 2.007, rz: 0, len: 0.80 },
+        'holding-right':        { ax: -0.300, ay: 0.040, az: 0.125, rx: 0,      ry: 2.051, rz: 0, len: 0.85 },
+        'holding-right-shoot':  { ax: -0.275, ay: 0.045, az: 0.115, rx: 0,      ry: 2.086, rz: 0, len: 0.85 },
+      },
     },
     {   // Hlamomet (slot 1) — fit in the viewer, 4 anims
       default: { ax: -0.275, ay: 0.045, az: 0.115, rx: 0, ry: 2.086, rz: 0, len: 0.85 },
