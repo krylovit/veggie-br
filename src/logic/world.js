@@ -27,7 +27,9 @@ export function createState(opts = {}) {
     playerEngaged: false,    // bots ignore the player until first pointer lock
     zone: {
       cx: CONFIG.zone.cx, cz: CONFIG.zone.cz,
-      radius: CONFIG.zone.startRadius, dps: CONFIG.zone.dpsStart,
+      radius: CONFIG.zone.startRadius, dps: CONFIG.zone.phases[0].dps,
+      phase: 0, t: 0, phaseR: CONFIG.zone.startRadius,
+      moving: false, waitLeft: 0,
     },
     balcony: { angle: 0 },   // respawn platform riding the zone wall
     projectiles: [],
@@ -52,6 +54,7 @@ export function createState(opts = {}) {
   const map = buildMap(state);
   state.obstacles = map.obstacles;
   state.voxels = map.voxels;
+  state.lootSpots = map.lootSpots;   // building interiors — indoor crates
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));
   state.crates = spawnCrates(state);
   makeInfection(state);
@@ -519,6 +522,7 @@ function resolveObstacleSides(e, state) {
   const r = CONFIG.player.radius;
   for (const o of state.obstacles) {
     if (e.pos.y >= o.max.y - 0.05) continue;
+    if (e.pos.y + CONFIG.player.height <= o.min.y + 0.05) continue;   // fully overhead — a ceiling, not a wall
     const cx = clamp(e.pos.x, o.min.x, o.max.x);
     const cz = clamp(e.pos.z, o.min.z, o.max.z);
     const dx = e.pos.x - cx;
@@ -678,9 +682,27 @@ export function damage(state, ent, amount, attackerId, veggie) {
 
 function stepZone(state, dt) {
   const z = CONFIG.zone;
-  const t = clamp((state.time - z.shrinkDelay) / z.shrinkTime, 0, 1);
-  state.zone.radius = lerp(z.startRadius, z.endRadius, t);
-  state.zone.dps = lerp(z.dpsStart, z.dpsEnd, t);
+  const zi = state.zone;
+  zi.t += dt;
+  zi.moving = false;
+  zi.waitLeft = 0;
+  // PUBG-style schedule: hold each phase's wait, then lerp the radius
+  // down to its target over dur seconds.
+  while (zi.phase < z.phases.length) {
+    const p = z.phases[zi.phase];
+    zi.dps = p.dps;
+    if (zi.t <= p.wait) { zi.waitLeft = p.wait - zi.t; break; }
+    const k = (zi.t - p.wait) / p.dur;
+    if (k < 1) {
+      zi.radius = lerp(zi.phaseR, p.to, k);
+      zi.moving = true;
+      break;
+    }
+    zi.phase++;
+    zi.t = 0;
+    zi.phaseR = p.to;
+    zi.radius = p.to;
+  }
   const center = { x: state.zone.cx, y: 0, z: state.zone.cz };
   const burn = (e) => {
     if (!e.alive || e.binned || e.onBalcony) return;

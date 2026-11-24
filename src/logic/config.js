@@ -2,8 +2,14 @@
 // mechanical translation of this table.
 export const CONFIG = {
   world: {
-    size: 220,            // square flat map edge length
+    size: 384,            // two ~170 m sectors + margins
     seed: 1337,
+    // Named districts, each built around its centre point and joined by
+    // the east-west highway. Sectors share drop/loot placement.
+    sectors: [
+      { x: -92, z: 0, kind: 'city' },
+      { x: 92, z: 0, kind: 'farm' },
+    ],
   },
   player: {
     radius: 0.55,         // capsule radius
@@ -70,7 +76,8 @@ export const CONFIG = {
   weaponSlots: 2,
   // Weapon crates: everyone drops unarmed, guns come from loot boxes.
   loot: {
-    crates: 14,         // crates scattered around the map at match start
+    crates: 26,         // crates scattered around the map at match start
+    indoorShare: 0.65,  // fraction tucked inside buildings — go loot-hunting
     openRange: 2.4,     // E distance to pop the lid
     botLootRange: 300,  // an unarmed bot walks to a crate within this range
     botLootTime: 1.6,   // seconds a bot stands at the lid prying it open
@@ -89,7 +96,8 @@ export const CONFIG = {
     biteRange: 1.7,
     biteCooldown: 0.8,
     hopOut: 7,             // launch velocity bursting from the hatch
-    buttonPos: { x: 9, z: -9 },    // on the plaza edge, next to the hatch
+    hatchPos: { x: -92, z: 0 },    // middle of the city plaza
+    buttonPos: { x: -83, z: -9 },  // on the plaza edge, next to the hatch
     pressRange: 2.8,
   },
   // Junk-binned victims turn into a BIG TOASTER instead of a veggie bin.
@@ -152,12 +160,17 @@ export const CONFIG = {
   },
   zone: {
     cx: 0, cz: 0,
-    startRadius: 92,
-    endRadius: 9,
-    shrinkDelay: 8,       // seconds before the circle starts shrinking
-    shrinkTime: 80,       // seconds from startRadius to endRadius
-    dpsStart: 4,
-    dpsEnd: 18,
+    startRadius: 290,     // beyond the map edge — the wall is off-world
+    // PUBG-style schedule: hold `wait` seconds at the current radius,
+    // then shrink to `to` over `dur` seconds at `dps` damage.
+    phases: [
+      { wait: 120, to: 170, dur: 60, dps: 4 },
+      { wait: 75,  to: 100, dur: 50, dps: 8 },
+      { wait: 60,  to: 55,  dur: 40, dps: 11 },
+      { wait: 45,  to: 28,  dur: 30, dps: 14 },
+      { wait: 40,  to: 12,  dur: 25, dps: 18 },
+      { wait: 45,  to: 5,   dur: 35, dps: 22 },
+    ],
   },
   lobby: {
     slots: 11,          // humans + bots total; bots fill the rest

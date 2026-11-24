@@ -12,7 +12,7 @@ const everyone = (state) => state.humans.concat(state.bots, state.zombies);
 export function makeInfection(state) {
   state.zombies = [];
   state.nextZombieId = 0;
-  state.hatch = { pos: v3(0, 0, 0), open: false, spawned: 0, spawnT: 0 };
+  state.hatch = { pos: v3(CONFIG.zombies.hatchPos.x, 0, CONFIG.zombies.hatchPos.z), open: false, spawned: 0, spawnT: 0 };
   state.button = {
     pos: v3(CONFIG.zombies.buttonPos.x, 0, CONFIG.zombies.buttonPos.z),
     pressed: false,

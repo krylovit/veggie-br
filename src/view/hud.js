@@ -39,11 +39,12 @@ export function createHud() {
       const aliveHumans = state.humans.filter((h) => h.alive && h !== p).length;
       $('alive').textContent = `Живых: ${aliveBots + aliveHumans + (p.alive ? 1 : 0)}`;
       $('kills').textContent = `Фраги: ${state.stats.kills} · Жизни: ${'♥'.repeat(Math.max(0, p.lives))}`;
-      const zc = CONFIG.zone;
-      const shrinking = state.time > zc.shrinkDelay;
-      $('zoneline').textContent = shrinking
-        ? `Зона: ${state.zone.radius.toFixed(0)} м · урон ${state.zone.dps.toFixed(0)}/с`
-        : `Зона сжимается через ${(zc.shrinkDelay - state.time).toFixed(0)} с`;
+      const zi = state.zone;
+      $('zoneline').textContent = zi.moving
+        ? `Зона: ${zi.radius.toFixed(0)} м · СЖИМАЕТСЯ · урон ${zi.dps.toFixed(0)}/с`
+        : zi.phase < CONFIG.zone.phases.length
+          ? `Зона сожмётся через ${Math.ceil(zi.waitLeft)} с · радиус ${zi.radius.toFixed(0)} м`
+          : `Зона: ${zi.radius.toFixed(0)} м · урон ${zi.dps.toFixed(0)}/с`;
 
       chips.forEach((c, i) => {
         c.classList.toggle('sel', (p.slot || 0) === i);

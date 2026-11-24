@@ -16,11 +16,13 @@ export function makeBots(state, count) {
     );
   for (let i = 0; i < n; i++) {
     let bx = 0, bz = 0;
+    const sectors = CONFIG.world.sectors;
+    const sc = sectors[Math.floor(rand(state) * sectors.length)];
     for (let tries = 0; tries < 8; tries++) {
-      const ang = (i / n) * Math.PI * 2 + rand(state) * 0.6;
-      const r = 26 + rand(state) * 60;
-      bx = Math.cos(ang) * r;
-      bz = Math.sin(ang) * r;
+      const ang = rand(state) * Math.PI * 2;
+      const r = 15 + rand(state) * 65;
+      bx = sc.x + Math.cos(ang) * r;
+      bz = sc.z + Math.sin(ang) * r;
       if (!inObstacle(bx, bz)) break;
     }
     const bot = {
