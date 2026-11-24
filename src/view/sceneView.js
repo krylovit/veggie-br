@@ -340,16 +340,25 @@ export function createView(container) {
   // Soldier bodies: one GLB template cloned (skeleton and all) per
   // entity, our veggie/junk gun GLBs attached to its arm-right bone.
   let soldierProto = null;              // {scene, anims}
-  const gunProtos = [null, null];       // slot -> Object3D template
+  const gunProtos = [null, null];       // slot -> {scene, wlen}
   gltf.load('assets/models/character-soldier.glb', (g) => {
     soldierProto = { scene: g.scene, anims: g.animations };
   }, undefined, () => {});
-  gltf.load('assets/models/ovoschemet.glb', (g) => { gunProtos[0] = g.scene; }, undefined, () => {});
-  gltf.load('assets/models/Hlamomet.glb',   (g) => { gunProtos[1] = g.scene; }, undefined, () => {});
+  const gunWlen = (g) => {
+    const wb = new THREE.Box3().setFromObject(g.scene);
+    const ws = wb.getSize(new THREE.Vector3());
+    return Math.max(ws.x, ws.y, ws.z, 1e-4);
+  };
+  gltf.load('assets/models/ovoschemet.glb', (g) => { gunProtos[0] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
+  gltf.load('assets/models/Hlamomet.glb',   (g) => { gunProtos[1] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
 
   const ANIM_NAMES = ['walk', 'holding-right', 'holding-right-shoot', 'fall', 'idle'];
-  const HAND_POS = { x: 0.02, y: 0.06, z: 0.04 };   // nudge in the grip
-  const HAND_ROT = { x: 0, y: Math.PI / 2, z: 0 };  // gun forward along arm
+  // Hand-fit per weapon slot — exported from fit-viewer.html
+  // (ax/ay/az = anchor offset in arm-local units, rx.. = radians, len = metres)
+  const GUN_FIT = [
+    { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: Math.PI / 2, rz: 0, len: 0.95 },  // ovoschemet
+    { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: Math.PI / 2, rz: 0, len: 0.95 },  // Hlamomet
+  ];
 
   function upgradeToSoldier(g, color) {
     if (!soldierProto || g.userData.glb) return;
@@ -373,22 +382,20 @@ export function createView(container) {
     body.add(model);
     body.add(g.userData.stuck);          // re-attach stuck-veggie layer
     body.add(g.userData.slime);
-    // guns into the right hand, slot visibility toggled in sync
+    // guns into the right hand, slot visibility toggled in sync —
+    // same hierarchy as fit-viewer: holder = anchor(pos) + gun(rot+scale)
     const hand = new THREE.Group();
     const armR = model.getObjectByName('arm-right');
     if (armR) armR.add(hand); else { hand.position.set(0.5, 1.1, 0.2); body.add(hand); }
-    hand.position.set(HAND_POS.x, HAND_POS.y, HAND_POS.z);
-    hand.rotation.set(HAND_ROT.x, HAND_ROT.y, HAND_ROT.z);
-    g.userData.guns = gunProtos.map((proto) => {
+    g.userData.guns = gunProtos.map((proto, i) => {
       if (!proto) return null;
-      const w = proto.clone();
-      const wb = new THREE.Box3().setFromObject(w);
-      const ws = wb.getSize(new THREE.Vector3());
-      const kk = 0.95 / Math.max(ws.x, ws.y, ws.z, 1e-4) / k;  // ~0.95m in world
-      w.scale.setScalar(kk);
-      const wc = wb.getCenter(new THREE.Vector3());
-      w.position.set(-wc.x * kk, -wc.y * kk, -wc.z * kk);
+      const fit = GUN_FIT[i];
       const holder = new THREE.Group();
+      holder.position.set(fit.ax, fit.ay, fit.az);
+      holder.rotation.set(fit.rx, fit.ry, fit.rz);
+      const w = proto.scene.clone();
+      w.scale.setScalar((fit.len / proto.wlen) / k);   // len metres in world
+      w.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       holder.add(w);
       holder.visible = false;
       hand.add(holder);

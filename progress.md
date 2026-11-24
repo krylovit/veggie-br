@@ -324,3 +324,4 @@
 - Боты и сетевые игроки — Kenney-солдаты (character-soldier.glb): walk/holding-right/shoot/fall анимации через AnimationMixer, тинт по цвету бота.
 - Оружие в руках: ovoschemet.glb/Hlamomet.glb цепляются на кость arm-right, видимый ствол = текущий слот энтити.
 - Боты меняют оружие: два слота как у игрока, <13 м — хламомёт, дальше — овощемёт; slot уезжает в снапшоте (поле w).
+- fit-viewer.html — вьювер посадки оружия (порт из cannon-squad): солдат + ovoschemet/Hlamomet, слайдеры anchor/rot/len, фиты per-анимация, экспорт JSON → GUN_FIT в sceneView.js.

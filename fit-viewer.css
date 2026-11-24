@@ -1,0 +1,20 @@
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#14181c;color:#dfe6ea;font-family:system-ui,sans-serif}
+#scene{position:fixed;inset:0}
+#ui{position:fixed;top:0;right:0;width:320px;height:100%;overflow-y:auto;background:#1b2127ee;padding:14px;border-left:1px solid #2c353d;z-index:5}
+h2{margin:0 0 10px;font-size:16px;letter-spacing:.1em;text-transform:uppercase;color:#7fd4ff}
+h3{margin:12px 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9db4c0}
+label{display:grid;grid-template-columns:70px 1fr;align-items:center;gap:8px;font-size:13px;margin:5px 0}
+select{width:100%;background:#10151a;color:#dfe6ea;border:1px solid #2c353d;padding:5px}
+.row{display:grid;grid-template-columns:24px 1fr 74px;align-items:center;gap:8px;margin:5px 0}
+.row>span{font:12px ui-monospace,monospace;color:#8fe388}
+input[type=range]{width:100%}
+input[type=number]{width:74px;background:#10151a;color:#8fe388;border:1px solid #2c353d;padding:3px 5px;font:12px ui-monospace,monospace}
+hr{border:none;border-top:1px solid #2c353d;margin:12px 0}
+button{background:#0f6d8a;color:#fff;border:none;padding:7px 11px;margin:4px 4px 0 0;cursor:pointer;font:inherit;font-size:13px}
+button:hover{filter:brightness(1.2)}
+#gameanims{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;margin:8px 0}
+#gameanims button{background:#284a5c;padding:4px 8px}
+#gameanims button.on{background:#0fa3c7}
+#editing{font-size:13px;color:#9db4c0;margin:6px 0}#editing b{color:#8fe388}
+textarea{width:100%;background:#10151a;color:#8fe388;border:1px solid #2c353d;font:11px ui-monospace,monospace;resize:vertical}
+.hint{font-size:12px;opacity:.7;line-height:1.5}
