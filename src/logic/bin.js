@@ -57,7 +57,7 @@ export function nearestBin(state, from, range) {
   let best = null;
   let bd = range;
   const consider = (e) => {
-    if (!e.binned || e === from) return;
+    if (!e.binned || e.binFlyT > 0 || e === from) return;
     const d = distXZ(from.pos, e.pos);
     if (d < bd) { bd = d; best = e; }
   };
@@ -84,7 +84,16 @@ export function kickBin(state, kicker, binEnt) {
     byPlayer: kicker === state.player,
   });
   if (binEnt.binKind === 'toast') spawnToasts(state, binEnt.pos);
-  killEntity(state, binEnt);
+  // the kicked bin really flies: victim rides it (first-person shows the
+  // tumble), then killEntity fires — balcony if lives remain, else out
+  binEnt.binFlyT = CONFIG.bin.flyTime;
+  binEnt.binFlySpin = 0;
+  binEnt.binFlyDir = d;
+  binEnt.vel = {
+    x: d.x * CONFIG.bin.flySpeed,
+    y: CONFIG.bin.flyUp,
+    z: d.z * CONFIG.bin.flySpeed,
+  };
 }
 
 // A kicked toaster pops healing toast slices — free HP for anyone fast
@@ -111,6 +120,8 @@ export function killEntity(state, ent) {
   ent.binned = false;
   ent.binKind = null;
   ent.binTimer = 0;
+  ent.binFlyT = 0;
+  ent.binFlySpin = 0;
   ent.chute = false;
   ent.slimedTimer = 0;
   ent.mounted = null;

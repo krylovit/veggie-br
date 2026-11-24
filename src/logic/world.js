@@ -80,6 +80,9 @@ function makeHuman(state, id, name, i, n) {
     binned: false,
     binKind: null,        // 'veg' bin | 'toast' toaster
     binTimer: 0,
+    binFlyT: 0,            // >0: kicked bin still tumbling through the air
+    binFlySpin: 0,
+    binFlyDir: null,
     vegCount: 0,
     vegStuck: [],
     lives: CONFIG.lives,
@@ -250,7 +253,9 @@ export function step(state, input, dt) {
       stepHuman(state, h, inp, dt);
     }
     for (const b of state.bots) {
-      if (b.binned) {
+      if (b.binFlyT > 0) {
+        stepBinFly(state, b, dt);
+      } else if (b.binned) {
         tickBin(state, b, dt);
         integrate(b, dt, state);   // bins still settle onto the ground
       } else if (b.slimedTimer > 0) {
@@ -274,8 +279,38 @@ export function step(state, input, dt) {
   return state;
 }
 
+// A kicked bin tumbles through the air (victim rides inside — first
+// person sees the somersault), bounces off the ground, then the kill
+// is scored: balcony redeploy or out for good.
+function stepBinFly(state, e, dt) {
+  e.binFlyT -= dt;
+  e.binFlySpin += dt * CONFIG.bin.spinRate;
+  e.vel.y -= CONFIG.player.gravity * dt;
+  e.pos.x += e.vel.x * dt;
+  e.pos.y += e.vel.y * dt;
+  e.pos.z += e.vel.z * dt;
+  const floor = floorHeight(e, state, e.pos.y + 0.5);
+  if (e.pos.y <= Math.max(0.4, floor)) {
+    e.pos.y = Math.max(0.4, floor);
+    if (e.vel.y < -2) {   // real thump — bounce it
+      e.vel.y = -e.vel.y * CONFIG.bin.bounce;
+      e.vel.x *= 0.6;
+      e.vel.z *= 0.6;
+      state.events.push({ type: 'landed', pos: copy(e.pos) });
+    } else {
+      e.vel = v3();
+    }
+  }
+  resolveObstacleSides(e, state);
+  if (e.binFlyT <= 0) {
+    e.binFlyT = 0;
+    killEntity(state, e);
+  }
+}
+
 function stepHuman(state, p, input, dt) {
   if (!p.alive) return;
+  if (p.binFlyT > 0) { stepBinFly(state, p, dt); return; }
   if (p.binned) {
     tickBin(state, p, dt);
     integrate(p, dt, state);

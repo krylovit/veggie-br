@@ -3,7 +3,7 @@
 import { CONFIG } from './config.js';
 import { v3, add, sub, norm, distXZ } from './vec3.js';
 import { rand, randRange } from './rng.js';
-import { makeWeapon, fire } from './weapon.js';
+import { makeWeapon, stepWeapon, fire } from './weapon.js';
 import { nearestBin, kickBin } from './bin.js';
 
 export function makeBots(state, count) {
@@ -36,6 +36,8 @@ export function makeBots(state, count) {
       binned: false,
       binKind: null,
       binTimer: 0,
+      binFlyT: 0,
+      binFlySpin: 0,
       vegCount: 0,
       vegStuck: [],
       lives: CONFIG.lives,
@@ -93,7 +95,15 @@ function nearestEnemy(bot, state) {
 
 function aimAt(bot, target, state) {
   const muzzle = add(bot.pos, { x: 0, y: CONFIG.weapon.muzzleY, z: 0 });
-  const chest = add(target.pos, { x: 0, y: 1.1, z: 0 });
+  // lead the target: predict where it will be when the veggie arrives,
+  // and lift the arc for the projectile drop over that flight time
+  const dist = Math.hypot(target.pos.x - muzzle.x, target.pos.z - muzzle.z);
+  const t = dist / CONFIG.weapon.speed;
+  const chest = {
+    x: target.pos.x + (target.vel?.x || 0) * t,
+    y: target.pos.y + 1.1 + 0.5 * CONFIG.weapon.gravity * t * t,
+    z: target.pos.z + (target.vel?.z || 0) * t,
+  };
   const dir = norm(sub(chest, muzzle));
   const s = CONFIG.bots.aimSpread;
   return norm({
@@ -141,6 +151,7 @@ export function stepBot(bot, state, dt) {
 
   bot.ai.think -= dt;
   if (bot.ai.think <= 0) pickWanderTarget(bot, state);
+  stepWeapon(bot.weapon, dt);   // without this the gun never reloads
 
   let want = null;
   // wounded? smell toast — heal before fighting on empty HP
@@ -156,14 +167,17 @@ export function stepBot(bot, state, dt) {
   let engaged = false;
   if (target) {
     const dd = distXZ(bot.pos, target.pos);
-    if (dd < cfg.aggroRange) {
-      engaged = true;
-      bot.yaw = Math.atan2(target.pos.x - bot.pos.x, target.pos.z - bot.pos.z);
-      if (bot.ai.fireAt <= 0 && dd < cfg.fireRange) {
-        fire(state, bot, aimAt(bot, target, state));
-        bot.ai.fireAt = randRange(state, cfg.fireInterval[0], cfg.fireInterval[1]);
-      }
-      if (!want) {
+    engaged = dd < cfg.aggroRange;
+    bot.yaw = Math.atan2(target.pos.x - bot.pos.x, target.pos.z - bot.pos.z);
+    if (bot.ai.fireAt <= 0 && dd < cfg.fireRange) {
+      fire(state, bot, aimAt(bot, target, state));
+      bot.ai.fireAt = randRange(state, cfg.fireInterval[0], cfg.fireInterval[1]);
+    }
+    if (!want) {
+      if (dd > cfg.engageFar) {
+        // target in sight but too far — charge it, don't wait for luck
+        want = { x: target.pos.x, z: target.pos.z };
+      } else if (engaged) {
         bot.ai.strafeT -= dt;
         if (bot.ai.strafeT <= 0) {
           bot.ai.strafe = -bot.ai.strafe;
@@ -173,8 +187,7 @@ export function stepBot(bot, state, dt) {
         const nz = (target.pos.z - bot.pos.z) / (dd || 1);
         let mx = -nz * bot.ai.strafe;   // tangent: circle the enemy
         let mz = nx * bot.ai.strafe;
-        if (dd > cfg.engageFar) { mx += nx; mz += nz; }
-        else if (dd < cfg.engageNear) { mx -= nx * 1.4; mz -= nz * 1.4; }
+        if (dd < cfg.engageNear) { mx -= nx * 1.4; mz -= nz * 1.4; }
         const ml = Math.hypot(mx, mz) || 1;
         want = { x: bot.pos.x + (mx / ml) * 5, z: bot.pos.z + (mz / ml) * 5 };
       }

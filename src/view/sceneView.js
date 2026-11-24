@@ -604,6 +604,10 @@ export function createView(container) {
     g.userData.body.visible = !e.binned;
     g.userData.bin.visible = !!e.binned && e.binKind !== 'toast';
     g.userData.toast.visible = !!e.binned && e.binKind === 'toast';
+    // kicked bin somersaults through the air
+    const spin = (e.binFlyT || 0) > 0 ? time * CONFIG.bin.spinRate : 0;
+    g.userData.bin.rotation.x = spin;
+    g.userData.toast.rotation.x = -spin * 0.8;
     g.userData.chute.visible = !!e.chute;
     if (e.chute) {
       g.userData.chute.rotation.z = Math.sin(time * 1.5 + e.chutePhase) * 0.14;
@@ -835,6 +839,10 @@ export function createView(container) {
         camera.position.y + aim.y,
         camera.position.z + aim.z);
       camera.lookAt(tmpV);
+      // kicked as a bin — the world somersaults around the victim
+      if ((state.player.binFlyT || 0) > 0) {
+        camera.rotateZ(state.time * CONFIG.bin.spinRate);
+      }
     },
 
     onEvent(e) {
@@ -847,14 +855,7 @@ export function createView(container) {
       } else if (e.type === 'binned') {
         spawnEffect(e.pos, 0xd8ffd0, 0.5, 2.6, 0.7);
       } else if (e.type === 'binKicked') {
-        const fly = e.kind === 'toast' ? makeToasterBinMesh() : makeBinMesh();
-        fly.visible = true;
-        fly.position.set(e.pos.x, e.pos.y, e.pos.z);
-        scene.add(fly);
-        effects.push({
-          mesh: fly, t: 0, ttl: 2.4, grow: 0, rise: 0,
-          fly: { vx: e.dir.x * CONFIG.bin.flySpeed, vy: CONFIG.bin.flyUp, vz: e.dir.z * CONFIG.bin.flySpeed },
-        });
+        // the real entity flies now (snapshot carries it) — just a flash
         spawnEffect(e.pos, 0xfff2a0, 0.25, 2, 0.5);
       } else if (e.type === 'revived') {
         spawnEffect(e.pos, 0xa8ffb0, 0.4, 2.2, 0.5);

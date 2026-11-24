@@ -90,6 +90,9 @@ export const CONFIG = {
     botSeekRange: 10,     // bots walk to a bin to kick it inside this range
     flySpeed: 6,          // launched bin: mostly UP, a little sideways
     flyUp: 19,            // apex ~7 m — the bin really pops
+    flyTime: 2.6,         // seconds the kicked bin tumbles before scoring
+    bounce: 0.45,         // ground bounce damping on landing
+    spinRate: 7,          // tumble speed (rad/s) while flying
   },
   // Match start: everyone drops in under underwear parachutes.
   drop: {
@@ -141,15 +144,15 @@ export const CONFIG = {
     count: 10,
     maxHp: 100,
     walkSpeed: 7.5,
-    aggroRange: 30,       // start tracking enemies inside this range
-    fireRange: 24,        // actually shoot inside this range
+    aggroRange: 45,       // start tracking enemies inside this range
+    fireRange: 32,        // actually shoot inside this range
     engageNear: 8,        // back off if an enemy is closer than this
     engageFar: 20,        // close in if an enemy is farther than this
     toastHp: 0.7,         // grab a toast slice when hp below this fraction
     toastRange: 15,       // how far a bot smells toast pickups
-    fireInterval: [1.5, 2.6],
+    fireInterval: [0.7, 1.4],
     fireCooldown: 0.8,    // min seconds between bot shots
-    aimSpread: 0.13,
+    aimSpread: 0.07,
     thinkInterval: [0.7, 1.8],
   },
   sim: {

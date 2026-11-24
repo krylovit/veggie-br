@@ -75,7 +75,9 @@ export function createHud() {
       }
 
       const msg = $('msg');
-      if (state.phase === 'won') {
+      if ((p.binFlyT || 0) > 0) {
+        msg.innerHTML = '<div class="big">ВАС ПНУЛИ!</div><div class="small">летите в баке…</div>';
+      } else if (state.phase === 'won') {
         msg.innerHTML = '<div class="big">ПОБЕДА!</div><div class="small">Все овощи съедены. R — заново</div>';
       } else if (state.phase === 'lost') {
         msg.innerHTML = '<div class="big">ВЫ ВЫБЫЛИ</div><div class="small">R — заново</div>';

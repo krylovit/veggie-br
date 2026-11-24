@@ -129,6 +129,7 @@ export function createNet() {
           al: e.alive ? 1 : 0,
           bi: e.binned ? 1 : 0,
           bk: e.binKind,
+          ft: r2(e.binFlyT || 0),
           ob: e.onBalcony ? 1 : 0,
           bp: e.balconyP, baa: r2(e.balconyA), br: r2(e.balconyR),
           bt: r2(e.balconyTimer),
@@ -181,6 +182,7 @@ export function createNet() {
       e.alive = !!se.al;
       e.binned = !!se.bi;
       e.binKind = se.bk;
+      e.binFlyT = se.ft || 0;
       e.onBalcony = !!se.ob;
       e.balconyP = se.bp; e.balconyA = se.baa; e.balconyR = se.br;
       e.balconyTimer = se.bt;
