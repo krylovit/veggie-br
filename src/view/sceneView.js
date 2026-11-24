@@ -353,11 +353,21 @@ export function createView(container) {
   gltf.load('assets/models/Hlamomet.glb',   (g) => { gunProtos[1] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
 
   const ANIM_NAMES = ['walk', 'holding-right', 'holding-right-shoot', 'fall', 'idle'];
-  // Hand-fit per weapon slot — exported from fit-viewer.html
-  // (ax/ay/az = anchor offset in arm-local units, rx.. = radians, len = metres)
+  // Hand-fit per weapon slot — exported from fit-viewer.html.
+  // Per-anim `fits` override `default` (hands sit differently per clip).
   const GUN_FIT = [
-    { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: Math.PI / 2, rz: 0, len: 0.95 },  // ovoschemet
-    { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: Math.PI / 2, rz: 0, len: 0.95 },  // Hlamomet
+    {   // ovoschemet (slot 0) — placeholder, not hand-fit yet
+      default: { ax: 0.02, ay: 0.06, az: 0.04, rx: 0, ry: 1.571, rz: 0, len: 0.95 },
+    },
+    {   // Hlamomet (slot 1) — fit in the viewer, 4 anims
+      default: { ax: -0.275, ay: 0.045, az: 0.115, rx: 0, ry: 2.086, rz: 0, len: 0.85 },
+      fits: {
+        'walk':                 { ax: -0.265, ay: 0.065, az: 0.085, rx: 0,      ry: 1.894, rz: 0, len: 0.75 },
+        'idle':                 { ax: -0.315, ay: 0.045, az: 0.125, rx: -0.061, ry: 2.007, rz: 0, len: 0.80 },
+        'holding-right':        { ax: -0.300, ay: 0.040, az: 0.125, rx: 0,      ry: 2.051, rz: 0, len: 0.85 },
+        'holding-right-shoot':  { ax: -0.275, ay: 0.045, az: 0.115, rx: 0,      ry: 2.086, rz: 0, len: 0.85 },
+      },
+    },
   ];
 
   function upgradeToSoldier(g, color) {
@@ -389,14 +399,12 @@ export function createView(container) {
     if (armR) armR.add(hand); else { hand.position.set(0.5, 1.1, 0.2); body.add(hand); }
     g.userData.guns = gunProtos.map((proto, i) => {
       if (!proto) return null;
-      const fit = GUN_FIT[i];
       const holder = new THREE.Group();
-      holder.position.set(fit.ax, fit.ay, fit.az);
-      holder.rotation.set(fit.rx, fit.ry, fit.rz);
       const w = proto.scene.clone();
-      w.scale.setScalar((fit.len / proto.wlen) / k);   // len metres in world
       w.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       holder.add(w);
+      holder.userData = { wlen: proto.wlen, k, w };
+      applyGunFit(holder, GUN_FIT[i].default);
       holder.visible = false;
       hand.add(holder);
       return holder;
@@ -410,6 +418,13 @@ export function createView(container) {
     g.userData.anim = { mixer, actions, cur: null };
     g.userData.shootT = 0;
     g.userData.lp = null;                // last pos — speed estimate
+  }
+
+  function applyGunFit(holder, fit) {
+    holder.position.set(fit.ax, fit.ay, fit.az);
+    holder.rotation.set(fit.rx, fit.ry, fit.rz);
+    const u = holder.userData;
+    u.w.scale.setScalar((fit.len / u.wlen) / u.k);
   }
 
   function playAnim(g, name, dt) {
@@ -719,6 +734,10 @@ export function createView(container) {
       if (g.userData.guns) {
         const cur = e.slot || 0;
         g.userData.guns.forEach((gun, i) => { if (gun) gun.visible = i === cur; });
+        // the visible gun re-fits for the current clip (hand pose shifts)
+        const fg = g.userData.guns[cur];
+        const gfit = GUN_FIT[cur];
+        if (fg && gfit) applyGunFit(fg, (gfit.fits && gfit.fits[want]) || gfit.default);
       }
     }
   }
