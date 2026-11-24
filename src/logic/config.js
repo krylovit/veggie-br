@@ -195,10 +195,12 @@ export const CONFIG = {
   // gravity — they crawl up the lift hill and rocket back down.
   coaster: {
     carts: 3,
-    boardRange: 2.8,
+    boardRange: 3.2,
     gravity: 16,        // slope acceleration along the track
     minSpeed: 3,        // chain-lift keeps carts moving
     maxSpeed: 26,
+    stationLen: 10,     // s-window around the station where brakes bite
+    stationSpeed: 2.2,  // crawl through the platform — boarding window
     // closed loop around the park: {x, z, h} waypoints, h = rail top
     track: [
       { x: 0,   z: -112, h: 2   },   // station

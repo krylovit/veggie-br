@@ -77,6 +77,11 @@ export function stepCoaster(state, dt) {
     const here = trackAt(tr, c.s);
     c.v += -here.slope * cfg.gravity * dt;
     c.v = clamp(c.v, cfg.minSpeed, cfg.maxSpeed);
+    // station brakes: carts crawl through the platform so you can hop on
+    const dStat = Math.min(c.s, tr.length - c.s);
+    if (dStat < cfg.stationLen && c.v > cfg.stationSpeed) {
+      c.v = Math.max(cfg.stationSpeed, c.v - 30 * dt);
+    }
     c.s += c.v * dt;
     const p = trackAt(tr, c.s);
     c.pos.x = p.x; c.pos.y = p.y; c.pos.z = p.z;

@@ -582,7 +582,17 @@ export function createView(container) {
     cabin.position.set(-0.15, 1.65, 0);
     const hood = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 1.7), paint);
     hood.position.set(1.25, 1.15, 0);
-    g.add(body, cabin, hood);
+    // dashboard + steering wheel live inside the cabin — they show only
+    // when the cabin is hidden for the first-person driver
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.4, 1.55),
+      mat(0x2a2f36, 0.6));
+    dash.position.set(0.72, 1.5, 0);
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.045, 8, 14),
+      mat(0x1a1a1e, 0.8));
+    wheel.position.set(0.42, 1.45, -0.42);
+    wheel.rotation.y = Math.PI / 2;
+    wheel.rotation.x = -0.35;
+    g.add(body, cabin, hood, dash, wheel);
     const wheels = [];
     const wg = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
     const wm = mat(0x1a1a1e, 0.9);
@@ -600,7 +610,7 @@ export function createView(container) {
       g.add(h);
     }
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    return { g, wheels, paint };
+    return { g, wheels, paint, cabin };
   }
 
   // Coaster cart: an open-top tub that rides the rail loop.
@@ -1116,7 +1126,7 @@ export function createView(container) {
         cv.g.position.set(c.pos.x, c.pos.y, c.pos.z);
         cv.g.rotation.y = c.yaw - Math.PI / 2;    // mesh nose points +X
         cv.g.rotation.z = c.steer * 0.03;
-        cv.g.visible = c.driver !== state.player;   // first-person: own car hidden
+        cv.cabin.visible = c.driver !== state.player;   // first-person: see the hood + dash, not the roof
         cv.paint.color.setHex(c.dead ? 0x3a3a3a : [0xc94f38, 0x3f7fbf, 0xd8a437, 0x58a05a, 0x8a6bb8][c.idx % 5]);
         const roll = c.speed * dtReal / 0.42;
         for (const w of cv.wheels) w.rotation.z -= roll;
@@ -1179,6 +1189,7 @@ export function createView(container) {
       const curSlot = state.player.slot || 0;
       viewmodel.visible =
         !state.player.binned && !state.player.onBalcony && state.player.mounted == null &&
+        !state.player.car &&                                    // hands on the wheel
         (!state.player.guns || state.player.guns[curSlot]);   // unarmed = empty hands
       vmSlot.forEach((g, i) => { g.visible = curSlot === i; });
 

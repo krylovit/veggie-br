@@ -396,6 +396,10 @@ export function buildMap(state) {
     for (const [bx, bz] of [[-14, 2], [12, 2], [-34, 14], [30, 14]]) bench(cx + bx, cz + bz);
     hedge(x0 + 2, cz + 8, x0 + 3, cz + 30);
     hedge(x1 - 3, cz + 8, x1 - 2, cz + 30);
+    // coaster station: raised platform beside the rail + a sign
+    box(cx - 8, 0, -112 + 1, cx + 12, 1, -112 + 3, 'stone');
+    box(cx + 12, 0, -112 + 2, cx + 13, 3, -112 + 3, 'log');     // sign post
+    deco(cx + 11, 3, -112 + 1, cx + 14, 5, -112 + 3, 'sand');   // sign board
     // the coaster: a rail ribbon over the waypoint loop + supports
     const tr = buildTrack();
     tr.pts.forEach((p, i) => {
