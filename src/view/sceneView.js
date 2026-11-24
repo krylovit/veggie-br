@@ -390,6 +390,7 @@ export function createView(container) {
   const hatchDoor = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 0.22, 16), MATS.bin);
   hatchDoor.position.y = 0.45;
   hatchG.add(hatchRing, hatchHole, hatchDoor);
+  hatchG.position.set(CONFIG.zombies.hatchPos.x, 0, CONFIG.zombies.hatchPos.z);
   hatchG.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   scene.add(hatchG);
   let hatchSlide = 0;
