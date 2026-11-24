@@ -371,7 +371,6 @@ export function createView(container) {
   // crate, lid plays its `open` clip when looted.
   let crateProto = null;                // {scene, anims}
   gltf.load('assets/models/props/crate-small.glb', (g) => {
-    g.scene.rotation.x = Math.PI;   // the GLB arrives lid-down — flip it
     crateProto = { scene: g.scene, anims: g.animations };
   }, undefined, () => {});
   const crateViews = new Map();         // crateId -> {g, mixer, opened}
@@ -1282,7 +1281,8 @@ export function createView(container) {
       for (const [mkey, list] of Object.entries(byMat)) {
         const im = new THREE.InstancedMesh(voxelGeo, MATS[mkey], list.length);
         list.forEach((v, i) => {
-          tmpM4.makeScale(1, v.sy ?? 1, 1);   // flat voxels = pavement
+          tmpM4.makeRotationY(v.ry ?? 0);
+          tmpM4.scale(tmpV.set(v.sx ?? 1, v.sy ?? 1, v.sz ?? 1));
           tmpM4.setPosition(v.x, v.y, v.z);
           im.setMatrixAt(i, tmpM4);
         });

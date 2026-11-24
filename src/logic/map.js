@@ -121,6 +121,14 @@ export function buildMap(state) {
     if (roofed) {
       box(x0, h, z0, x0 + w, h + 1, z0 + d, 'stone');
       if (withStairs) stairs(x0, z0, d, h + 1);
+      // furniture — bed along the west wall, a wardrobe in the far
+      // corner, a low table. Kept off the door lane and the loot spot.
+      if (w >= 7 && d >= 7) {
+        box(x0 + 1, 0, z0 + d - 3, x0 + 2, 1, z0 + d - 1, 'sand');      // bed
+        box(x0 + 1, 1, z0 + d - 2, x0 + 2, 2, z0 + d - 1, 'log');       // headboard
+        box(x0 + w - 2, 0, z0 + 1, x0 + w - 1, 3, z0 + 2, 'log');       // wardrobe
+        box(x0 + w - 4, 0, z0 + d - 2, x0 + w - 2, 1, z0 + d - 1, 'log'); // table
+      }
     }
     paveRect(x0 + 1, z0 + 1, x0 + w - 1, z0 + d - 1, 'path');
     lootSpots.push({ x: x0 + Math.floor(w / 2) + 0.5, z: z0 + Math.floor(d / 2) + 0.5 });
@@ -364,15 +372,18 @@ export function buildMap(state) {
   const ferris = (cx, cz) => {
     box(cx - 2, 0, cz, cx - 1, 10, cz + 1, 'log');                  // A-legs
     box(cx + 1, 0, cz, cx + 2, 10, cz + 1, 'log');
-    deco(cx - 1, 9, cz, cx + 1, 11, cz + 1, 'log');                 // hub
-    for (let i = 0; i < 20; i++) {                                  // the wheel
+    deco(cx - 1, 9, cz, cx + 1, 11, cz + 1, 'bin');                 // hub
+    for (let i = 0; i < 20; i++) {                                  // the wheel rim
       const t = (i / 20) * Math.PI * 2;
       deco(cx + Math.round(Math.cos(t) * 8), 10 + Math.round(Math.sin(t) * 8),
            cz, cx + Math.round(Math.cos(t) * 8) + 1,
-           10 + Math.round(Math.sin(t) * 8) + 1, cz + 1, 'brick');
-      deco(cx + Math.round(Math.cos(t) * 8), 10 + Math.round(Math.sin(t) * 8) - 1,
-           cz, cx + Math.round(Math.cos(t) * 8) + 1,
-           10 + Math.round(Math.sin(t) * 8), cz + 1, 'sand');       // gondolas
+           10 + Math.round(Math.sin(t) * 8) + 1, cz + 1, 'log');
+    }
+    for (let i = 0; i < 8; i++) {                                   // gondola cabins
+      const t = (i / 8) * Math.PI * 2 + 0.4;
+      const gx = cx + Math.round(Math.cos(t) * 8);
+      const gy = 10 + Math.round(Math.sin(t) * 8);
+      deco(gx, gy - 2, cz - 1, gx + 1, gy - 1, cz + 2, i % 2 ? 'sand' : 'leaf');
     }
   };
   const park = (cx, cz) => {
@@ -391,7 +402,7 @@ export function buildMap(state) {
     stall(cx - 28, cz + 6, 'sand');
     stall(cx - 22, cz + 6, 'leaf');
     carousel(cx - 30, cz - 14);
-    ferris(cx + 28, cz - 24);
+    ferris(cx + 26, cz + 33);   // south-east corner — clear of the rail loop
     for (const [lx, lz] of [[-30, 0], [30, 0], [-10, 20], [10, 20]]) lamp(cx + lx, cz + lz);
     for (const [bx, bz] of [[-14, 2], [12, 2], [-34, 14], [30, 14]]) bench(cx + bx, cz + bz);
     hedge(x0 + 2, cz + 8, x0 + 3, cz + 30);
@@ -400,12 +411,24 @@ export function buildMap(state) {
     box(cx - 8, 0, -112 + 1, cx + 12, 1, -112 + 3, 'stone');
     box(cx + 12, 0, -112 + 2, cx + 13, 3, -112 + 3, 'log');     // sign post
     deco(cx + 11, 3, -112 + 1, cx + 14, 5, -112 + 3, 'sand');   // sign board
-    // the coaster: a rail ribbon over the waypoint loop + supports
+    // the coaster: proper rails — dark log ties with two thin metal
+    // bars riding on top, on timber piers. Decorative, carts carry you.
     const tr = buildTrack();
     tr.pts.forEach((p, i) => {
-      const rx = Math.floor(p.x), rz = Math.floor(p.z), ry = Math.round(p.y);
-      box(rx, ry - 1, rz, rx + 2, ry, rz + 2, 'stone');              // rail bed
-      if (i % 7 === 0 && ry > 2) {                                   // support pier
+      const nxt = tr.pts[Math.min(i + 1, tr.pts.length - 1)];
+      const yaw = Math.atan2(nxt.x - p.x, nxt.z - p.z);
+      const px = Math.cos(yaw), pz = -Math.sin(yaw);   // track-local +X
+      if (i % 2 === 0) {                                // tie every ~2.4 m
+        voxels.push({ x: p.x, y: p.y - 0.32, z: p.z, mat: 'log', sx: 2.1, sy: 0.22, sz: 0.55, ry: yaw });
+      }
+      for (const side of [-0.68, 0.68]) {               // the two rails
+        voxels.push({
+          x: p.x + px * side, y: p.y - 0.06, z: p.z + pz * side,
+          mat: 'bin', sx: 0.16, sy: 0.26, sz: 1.45, ry: yaw,
+        });
+      }
+      if (i % 7 === 0 && p.y > 2.5) {                   // support pier
+        const rx = Math.floor(p.x), rz = Math.floor(p.z), ry = Math.round(p.y);
         box(rx, 0, rz, rx + 1, ry - 1, rz + 1, 'log');
       }
     });
