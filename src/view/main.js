@@ -6,6 +6,7 @@ import { createInput, buildLogicInput } from './input.js';
 import { createView } from './sceneView.js';
 import { createHud } from './hud.js';
 import { createNet, defaultWsUrl } from '../net/net.js';
+import { openCharSelect } from './charSelect.js';
 
 const view = createView(document.getElementById('app'));
 const input = createInput(view.canvas);
@@ -17,6 +18,9 @@ let packet = null;
 let acc = 0;
 let last = performance.now();
 let lobbyTimer = null;
+// picked character GLB index (null = netIdx fallback); persisted
+let mySkin = localStorage.getItem('veggie_skin');
+mySkin = mySkin == null ? null : +mySkin;
 
 // ---------- lobby ----------
 
@@ -37,6 +41,7 @@ function hideLobby() {
 
 function startMatch(opts) {
   state = createState(opts);
+  if (mySkin != null) state.player.skin = mySkin;
   view.reset(state);
   document.getElementById('feed').innerHTML = '';
   hideLobby();
@@ -44,7 +49,12 @@ function startMatch(opts) {
 
 document.getElementById('soloBtn').onclick = () => {
   net.leave();
-  startMatch({ humans: [{ id: 'player', name: nickEl.value.trim() || 'Вы' }], myId: 'player' });
+  hideLobby();
+  openCharSelect((skin) => {
+    mySkin = skin;
+    localStorage.setItem('veggie_skin', skin);
+    startMatch({ humans: [{ id: 'player', name: nickEl.value.trim() || 'Вы' }], myId: 'player' });
+  }, showLobby);
 };
 
 document.getElementById('joinBtn').onclick = async () => {
@@ -149,6 +159,7 @@ function restartIfNeeded() {
     return;
   }
   state = createState();
+  if (mySkin != null) state.player.skin = mySkin;
   view.reset(state);
   document.getElementById('feed').innerHTML = '';
 }
@@ -161,6 +172,7 @@ function frame(now) {
 
   restartIfNeeded();
   packet = buildLogicInput(input);
+  packet.sk = mySkin;      // chosen character — host echoes it to everyone
 
   if (net.role === 'host' && net.connected) net.drainInputs(state);
   if (net.role === 'client' && net.connected) net.sendInput(packet, now);

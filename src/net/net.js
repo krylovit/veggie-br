@@ -105,6 +105,7 @@ export function createNet() {
         merged.slotCycle = (merged.slotCycle || 0) + (p.slotCycle || 0);
       }
       h.netInput = merged;
+      if (merged.sk != null) h.skin = merged.sk;   // character pick rides inputs
       delete net.inputQ[h.id];
     }
   };
@@ -141,6 +142,7 @@ export function createNet() {
           lv: e.lives, w: e.slot || 0,
           g: (e.guns ? (e.guns[0] ? 1 : 0) | (e.guns[1] ? 2 : 0) : 3),
           zm: e.zombie ? 1 : 0,
+          sk: e.skin,
           ca: e.car ? e.car.idx + 1 : 0,
           ct: e.cart ? e.cart.idx + 1 : 0,
         })),
@@ -220,6 +222,7 @@ export function createNet() {
       e.slot = se.w || 0;
       if (se.g != null) e.guns = [!!(se.g & 1), !!(se.g & 2)];
       e.zombie = !!se.zm;
+      if (se.sk != null) e.skin = se.sk;
       e.car = se.ca ? state.cars[se.ca - 1] || null : null;
       e.cart = se.ct ? state.coaster.carts[se.ct - 1] || null : null;
       if (!e.alive) e.vel = { x: 0, y: 0, z: 0 };

@@ -357,7 +357,8 @@ export function createView(container) {
     }, undefined, () => {});
   });
   const charIdxFor = (e) => e.zombie ? ZOMBIE_IDX :
-    ((e.netIdx != null ? e.netIdx : 0) % ZOMBIE_IDX + ZOMBIE_IDX) % ZOMBIE_IDX;
+    (e.skin != null ? e.skin :
+    ((e.netIdx != null ? e.netIdx : 0) % ZOMBIE_IDX + ZOMBIE_IDX) % ZOMBIE_IDX);
   const gunProtos = [null, null];       // slot -> {scene, wlen}
   const gunWlen = (g) => {
     const wb = new THREE.Box3().setFromObject(g.scene);
@@ -437,10 +438,13 @@ export function createView(container) {
   function upgradeToSoldier(g, e) {
     const proto = charProtos[charIdxFor(e)];
     if (!proto) return;
-    // rebuild when the body turns into a zombie (or gets cured by death)
-    if (g.userData.glb && g.userData.charZombie === !!e.zombie) return;
+    // rebuild when the body turns into a zombie or the skin changes
+    const want = charIdxFor(e);
+    if (g.userData.glb && g.userData.charZombie === !!e.zombie &&
+        g.userData.charIdx === want) return;
     g.userData.glb = true;
     g.userData.charZombie = !!e.zombie;
+    g.userData.charIdx = want;
     g.userData.anim = null;
     g.userData.guns = null;
     const color = e.bot ? botColor(e.id) : 0x7ec9ff;
@@ -1100,14 +1104,21 @@ export function createView(container) {
         ferris.wheel.rotation.z += dtReal * 0.12;
         for (const cab of ferris.cabs) cab.rotation.z = -ferris.wheel.rotation.z;
       }
-      // player is first-person — no self mesh; everyone else gets capsules
+      // player is first-person: the mesh stays invisible on screen
+      // (colorWrite off) but keeps casting its animated shadow — you
+      // see your own fighter's silhouette on the ground
       for (const e of state.humans.concat(state.bots, state.zombies || [])) {
+        syncEntity(e, 0, state.time, dtReal);
         if (e === state.player) {
           const pg = entities.get(e.id);
-          if (pg) { scene.remove(pg); entities.delete(e.id); }
-          continue;
+          if (pg) pg.traverse((o) => {
+            const m = o.material;
+            if (m) {
+              if (Array.isArray(m)) m.forEach((x) => { x.colorWrite = false; x.depthWrite = false; });
+              else { m.colorWrite = false; m.depthWrite = false; }
+            }
+          });
         }
-        syncEntity(e, 0, state.time, dtReal);
       }
 
       syncBalcony(state);

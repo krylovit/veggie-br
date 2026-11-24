@@ -83,6 +83,28 @@
     min-height: 20px; opacity: .9; }
   #lobbyInfo .roster { color: #ffd84d; }
   #lobbyInfo .countdown { font-size: 22px; font-weight: 800; color: #aef78e; }
+
+  /* character picker — 3D carousel between lobby and drop */
+  #charSel { position: fixed; inset: 0; z-index: 29; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5,10,5,.85); color: #fff; user-select: none; }
+  #charSel.hidden { display: none; }
+  #charSel .csTitle { font-size: 30px; font-weight: 800; letter-spacing: 2px;
+    margin-bottom: 6px; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #csCanvas { width: min(900px, 92vw); height: min(440px, 55vh); }
+  .csRow { display: flex; align-items: center; gap: 22px; margin-top: 2px; }
+  .csArrow { width: 52px; height: 52px; font-size: 30px; line-height: 1;
+    border-radius: 50%; border: 1px solid rgba(255,255,255,.3);
+    background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+  .csArrow:hover { filter: brightness(1.25); }
+  #csName { min-width: 160px; text-align: center; font-size: 24px;
+    font-weight: 800; color: #ffd84d; }
+  #charSel button.csBtn { margin: 10px 4px 0; padding: 11px 42px;
+    font-size: 16px; font-weight: 700; border: 0; border-radius: 8px;
+    cursor: pointer; }
+  #csGo { background: #4fd35a; color: #062; }
+  #csBack { background: rgba(255,255,255,.12); color: #fff; }
+  .csBtns { display: flex; }
 </style>
 <script type="importmap">
   { "imports": { "three": "./vendor/three.module.js" } }
@@ -122,6 +144,20 @@
     </div>
   </div>
 
-  <script type="module" src="./src/view/main.js"></script>
+  <div id="charSel" class="hidden">
+    <div class="csTitle">ВЫБЕРИ БОЙЦА</div>
+    <canvas id="csCanvas"></canvas>
+    <div class="csRow">
+      <button id="csPrev" class="csArrow">‹</button>
+      <div id="csName"></div>
+      <button id="csNext" class="csArrow">›</button>
+    </div>
+    <div class="csBtns">
+      <button id="csBack" class="csBtn">назад</button>
+      <button id="csGo" class="csBtn">В БОЙ</button>
+    </div>
+  </div>
+
+  <script type="module" src="./src/view/main.js?v=2"></script>
 </body>
 </html>
