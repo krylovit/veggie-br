@@ -314,8 +314,8 @@ export function createView(container) {
   // fallback of their slot. Tweak size/pos/rot below if one sits oddly
   // (rot in radians; size = longest model dimension in viewmodel units).
   const GLB_VM = [
-    { file: 'assets/models/ovoschemet.glb', size: 1.0, pos: { x: 0, y: -0.02, z: 0 }, rot: { x: 0, y: 0, z: 0 } },
-    { file: 'assets/models/Hlamomet.glb',   size: 1.0, pos: { x: 0.02, y: -0.05, z: 0 }, rot: { x: 0, y: 0, z: 0 } },
+    { file: 'assets/models/weapons/ovoschemet.glb', size: 1.0, pos: { x: 0, y: -0.02, z: 0 }, rot: { x: 0, y: 0, z: 0 } },
+    { file: 'assets/models/weapons/Hlamomet.glb',   size: 1.0, pos: { x: 0.02, y: -0.05, z: 0 }, rot: { x: 0, y: 0, z: 0 } },
   ];
   const gltf = new GLTFLoader();
   GLB_VM.forEach((cfg, i) => {
@@ -337,20 +337,40 @@ export function createView(container) {
     }, undefined, () => {});
   });
 
-  // Soldier bodies: one GLB template cloned (skeleton and all) per
-  // entity, our veggie/junk gun GLBs attached to its arm-right bone.
-  let soldierProto = null;              // {scene, anims}
+  // Character bodies: one GLB template per cast member, cloned
+  // (skeleton and all) per entity; guns attach to arm-right.
+  const CHAR_FILES = [
+    'character-soldier', 'character-raider', 'character-worker',
+    'character-male-a', 'character-male-b', 'character-male-c',
+    'character-male-d', 'character-male-e', 'character-male-f',
+    'character-male-g', 'character-female-a', 'character-female-b',
+    'character-female-c', 'character-female-d', 'character-female-e',
+    'character-female-f',
+  ];
+  const charProtos = new Array(CHAR_FILES.length).fill(null);  // {scene, anims}
+  CHAR_FILES.forEach((name, i) => {
+    gltf.load(`assets/models/characters/${name}.glb`, (g) => {
+      charProtos[i] = { scene: g.scene, anims: g.animations };
+    }, undefined, () => {});
+  });
+  const charIdxFor = (e) =>
+    ((e.netIdx != null ? e.netIdx : 0) % CHAR_FILES.length + CHAR_FILES.length) % CHAR_FILES.length;
   const gunProtos = [null, null];       // slot -> {scene, wlen}
-  gltf.load('assets/models/character-soldier.glb', (g) => {
-    soldierProto = { scene: g.scene, anims: g.animations };
-  }, undefined, () => {});
   const gunWlen = (g) => {
     const wb = new THREE.Box3().setFromObject(g.scene);
     const ws = wb.getSize(new THREE.Vector3());
     return Math.max(ws.x, ws.y, ws.z, 1e-4);
   };
-  gltf.load('assets/models/ovoschemet.glb', (g) => { gunProtos[0] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
-  gltf.load('assets/models/Hlamomet.glb',   (g) => { gunProtos[1] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
+  gltf.load('assets/models/weapons/ovoschemet.glb', (g) => { gunProtos[0] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
+  gltf.load('assets/models/weapons/Hlamomet.glb',   (g) => { gunProtos[1] = { scene: g.scene, wlen: gunWlen(g) }; }, undefined, () => {});
+
+  // Weapon crates scattered at match start — same GLB cloned per
+  // crate, lid plays its `open` clip when looted.
+  let crateProto = null;                // {scene, anims}
+  gltf.load('assets/models/props/crate-small.glb', (g) => {
+    crateProto = { scene: g.scene, anims: g.animations };
+  }, undefined, () => {});
+  const crateViews = new Map();         // crateId -> {g, mixer, opened}
 
   const ANIM_NAMES = ['walk', 'holding-right', 'holding-right-shoot', 'fall', 'idle'];
   // Hand-fit per weapon slot — exported from fit-viewer.html.
@@ -376,10 +396,12 @@ export function createView(container) {
     },
   ];
 
-  function upgradeToSoldier(g, color) {
-    if (!soldierProto || g.userData.glb) return;
+  function upgradeToSoldier(g, e) {
+    const proto = charProtos[charIdxFor(e)];
+    if (!proto || g.userData.glb) return;
     g.userData.glb = true;
-    const model = cloneSkeleton(soldierProto.scene);
+    const color = e.bot ? botColor(e.id) : 0x7ec9ff;
+    const model = cloneSkeleton(proto.scene);
     const bb = new THREE.Box3().setFromObject(model);
     const k = CONFIG.player.height / Math.max(bb.max.y - bb.min.y, 1e-4);
     model.scale.setScalar(k);
@@ -418,7 +440,7 @@ export function createView(container) {
     const mixer = new THREE.AnimationMixer(model);
     const actions = {};
     for (const n of ANIM_NAMES) {
-      const c = THREE.AnimationClip.findByName(soldierProto.anims, n);
+      const c = THREE.AnimationClip.findByName(proto.anims, n);
       if (c) actions[n] = mixer.clipAction(c);
     }
     g.userData.anim = { mixer, actions, cur: null };
@@ -706,7 +728,7 @@ export function createView(container) {
       if (!e.bot) g.add(makeNameSprite(e.name || 'игрок'));
       entities.set(e.id, g);
     }
-    upgradeToSoldier(g, e.bot ? botColor(e.id) : 0x7ec9ff);
+    upgradeToSoldier(g, e);
     g.position.set(e.pos.x, e.pos.y, e.pos.z);
     g.rotation.y = e.yaw;
     g.userData.body.visible = !e.binned;
@@ -909,6 +931,37 @@ export function createView(container) {
         if (!seenPick.has(id)) { scene.remove(m); pickViews.delete(id); }
       }
 
+      // weapon crates: clone the GLB per crate, pop the lid on loot
+      if (crateProto) {
+        for (const c of state.crates) {
+          let cv = crateViews.get(c.id);
+          if (!cv) {
+            const g = cloneSkeleton(crateProto.scene);
+            const bb = new THREE.Box3().setFromObject(g);
+            const ws = bb.getSize(new THREE.Vector3());
+            const k = 1.0 / Math.max(ws.x, ws.y, ws.z, 1e-4);   // ~1 m wide
+            g.scale.setScalar(k);
+            g.position.set(c.pos.x, c.pos.y - bb.min.y * k, c.pos.z);
+            g.rotation.y = c.yaw;
+            g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+            scene.add(g);
+            cv = { g, mixer: new THREE.AnimationMixer(g), opened: false };
+            crateViews.set(c.id, cv);
+          }
+          if (c.opened && !cv.opened) {
+            cv.opened = true;
+            const clip = THREE.AnimationClip.findByName(crateProto.anims, 'open');
+            if (clip) {
+              const a = cv.mixer.clipAction(clip);
+              a.setLoop(THREE.LoopOnce);
+              a.clampWhenFinished = true;
+              a.play();
+            }
+          }
+          cv.mixer.update(dtReal);
+        }
+      }
+
       zoneWall.scale.set(state.zone.radius, 1, state.zone.radius);
       zoneRing.scale.set(state.zone.radius, state.zone.radius, 1);
       zoneWall.material.opacity = 0.13 + 0.05 * Math.sin(state.time * 3);
@@ -937,9 +990,11 @@ export function createView(container) {
       vmKick = Math.max(0, vmKick - dtReal * 1.4);
       viewmodel.position.z = -0.72 + vmKick;
       viewmodel.rotation.x = vmKick * 1.6;
+      const curSlot = state.player.slot || 0;
       viewmodel.visible =
-        !state.player.binned && !state.player.onBalcony && state.player.mounted == null;
-      vmSlot.forEach((g, i) => { g.visible = (state.player.slot || 0) === i; });
+        !state.player.binned && !state.player.onBalcony && state.player.mounted == null &&
+        (!state.player.guns || state.player.guns[curSlot]);   // unarmed = empty hands
+      vmSlot.forEach((g, i) => { g.visible = curSlot === i; });
 
       // sniper scope zoom while manning a balcony cannon
       const wantFov = state.player.mounted != null ? 22 : CONFIG.camera.fov;
@@ -1017,6 +1072,8 @@ export function createView(container) {
       pviews.clear();
       for (const [, m] of pickViews) scene.remove(m);
       pickViews.clear();
+      for (const [, cv] of crateViews) scene.remove(cv.g);
+      crateViews.clear();
       for (const fx of effects) scene.remove(fx.mesh);
       effects.length = 0;
       for (const m of voxelMeshes) scene.remove(m);

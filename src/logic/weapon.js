@@ -17,6 +17,7 @@ export function stepWeapon(weapon, dt) {
 // Returns the projectile or null while cooling down / under the chute.
 export function fire(state, shooter, aimDir) {
   const slot = shooter.slot || 0;
+  if (shooter.guns && !shooter.guns[slot]) return null;   // don't own that gun
   const w = shooter.weaponSlots ? shooter.weaponSlots[slot] : shooter.weapon;
   if (w.cooldown > 0 || shooter.chute) return null;
   const cfg = slot === 1 ? CONFIG.junk : CONFIG.weapon;

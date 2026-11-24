@@ -45,7 +45,10 @@ export function createHud() {
         ? `Зона: ${state.zone.radius.toFixed(0)} м · урон ${state.zone.dps.toFixed(0)}/с`
         : `Зона сжимается через ${(zc.shrinkDelay - state.time).toFixed(0)} с`;
 
-      chips.forEach((c, i) => c.classList.toggle('sel', (p.slot || 0) === i));
+      chips.forEach((c, i) => {
+        c.classList.toggle('sel', (p.slot || 0) === i);
+        c.classList.toggle('missing', !!(p.guns && !p.guns[i]));   // not looted yet
+      });
 
       const outside =
         state.playerEngaged && p.alive && !p.binned && !p.onBalcony &&
@@ -122,6 +125,11 @@ export function createHud() {
       } else if (e.type === 'binKicked') {
         const what = e.kind === 'toast' ? 'тостер улетел, тосты на всех!' : 'бак улетел';
         feed(`${e.name} выбыл — ${what}${e.byPlayer ? ' (ваш фраг)' : ''}`);
+      } else if (e.type === 'loot') {
+        const gun = e.slot === 1 ? 'ХЛАМОМЁТ' : 'ОВОЩЕМЁТ';
+        feed(e.byPlayer
+          ? (e.healed > 0 ? `Ящик: та же пушка — +${e.healed} HP` : `Вы нашли ${gun}!`)
+          : `${e.name} нашёл ${gun.toLowerCase()}`);
       } else if (e.type === 'heal') {
         if (e.target === 'player') feed(`тост +${e.amount} HP`);
       } else if (e.type === 'toBalcony') {

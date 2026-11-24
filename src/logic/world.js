@@ -7,6 +7,7 @@ import { rand } from './rng.js';
 import { makeWeapon, stepWeapon, fire, fireSlime } from './weapon.js';
 import { makeBots, stepBot } from './bots.js';
 import { stickVeggie, tickBin, tryKick, killEntity, redeploy, slimeHit } from './bin.js';
+import { spawnCrates, tryOpenCrate } from './loot.js';
 import { segmentSphere, segmentGround, segmentAABB } from './raycast.js';
 
 // opts: {seed, humans:[{id,name}], myId, netRole} — defaults give the
@@ -49,6 +50,7 @@ export function createState(opts = {}) {
   state.obstacles = map.obstacles;
   state.voxels = map.voxels;
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));
+  state.crates = spawnCrates(state);
   // stable net ordering: humans first (join order), then bots
   state.netEnts = [...state.humans, ...state.bots];
   state.netEnts.forEach((e, i) => { e.netIdx = i; });
@@ -59,6 +61,8 @@ export function createState(opts = {}) {
 export function allEntities(state) {
   return state.humans.concat(state.bots);
 }
+
+export { nearestCrate, openCrate, tryOpenCrate } from './loot.js';
 
 function makeHuman(state, id, name, i, n) {
   // humans parachute in on a ring around the spawn point — same seed
@@ -96,6 +100,7 @@ function makeHuman(state, id, name, i, n) {
     onGround: false,
     weapon: makeWeapon(),
     weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie gun, [1] junk gun
+    guns: [false, false],    // owned weapons — everyone lands unarmed
     slot: 0,
   };
 }
@@ -351,7 +356,7 @@ function stepHuman(state, p, input, dt) {
     const shot = fire(state, p, input.aim);
     if (shot && p === state.player) state.stats.shots++;
   }
-  if (input.interact) tryKick(state, p);
+  if (input.interact && !tryKick(state, p)) tryOpenCrate(state, p);
   integrate(p, dt, state);
 }
 

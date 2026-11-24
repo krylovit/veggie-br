@@ -139,6 +139,7 @@ export function createNet() {
           en: e.engaged ? 1 : 0,
           vc: e.vegCount, vs: e.vegStuck,
           lv: e.lives, w: e.slot || 0,
+          g: (e.guns ? (e.guns[0] ? 1 : 0) | (e.guns[1] ? 2 : 0) : 3),
         })),
         pr: state.projectiles.map((p) => ({
           i: p.id, t: p.type,
@@ -147,6 +148,10 @@ export function createNet() {
         })),
         pk: state.pickups.map((p) => ({
           i: p.id, x: r2(p.pos.x), y: r2(p.pos.y), z: r2(p.pos.z), ttl: r2(p.ttl),
+        })),
+        cr: state.crates.map((c) => ({
+          i: c.id, x: r2(c.pos.x), z: r2(c.pos.z), yw: r2(c.yaw),
+          o: c.opened ? 1 : 0,
         })),
         ev: net.pendingEvents.splice(0),
       },
@@ -194,6 +199,7 @@ export function createNet() {
       if (se.vs) e.vegStuck = se.vs.slice();
       e.lives = se.lv;
       e.slot = se.w || 0;
+      if (se.g != null) e.guns = [!!(se.g & 1), !!(se.g & 2)];
       if (!e.alive) e.vel = { x: 0, y: 0, z: 0 };
     }
     // projectiles: host list wins; keep only very fresh local shots that
@@ -218,6 +224,18 @@ export function createNet() {
       pos: { x: p.x, y: p.y, z: p.z },
       vel: { x: 0, y: 0, z: 0 }, ttl: p.ttl,
     }));
+    if (s.cr) {
+      const byId = new Map(state.crates.map((c) => [c.id, c]));
+      for (const sc of s.cr) {
+        const c = byId.get(sc.i);
+        if (!c) continue;
+        if (sc.o && !c.opened) {          // lid popped on the host
+          c.opened = true;
+          state.events.push({ type: 'crateOpen', crate: c.id });
+        }
+        c.opened = !!sc.o;
+      }
+    }
     for (const ev of s.ev) {
       // host emits byPlayer from its own perspective — remap to mine
       ev.byPlayer = ev.attacker === myId ||

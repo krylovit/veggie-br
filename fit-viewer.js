@@ -7,10 +7,10 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 
 const MODEL_H = 1.8;                       // = CONFIG.player.height
-const CHARACTERS = { soldier: 'assets/models/character-soldier.glb' };
+const CHARACTERS = { soldier: 'assets/models/characters/character-soldier.glb' };
 const WEAPONS = {
-  ovoschemet: 'assets/models/ovoschemet.glb',
-  Hlamomet: 'assets/models/Hlamomet.glb',
+  ovoschemet: 'assets/models/weapons/ovoschemet.glb',
+  Hlamomet: 'assets/models/weapons/Hlamomet.glb',
 };
 
 // ---------- scene ----------

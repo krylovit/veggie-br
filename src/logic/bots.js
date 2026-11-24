@@ -5,6 +5,7 @@ import { v3, add, sub, norm, distXZ } from './vec3.js';
 import { rand, randRange } from './rng.js';
 import { makeWeapon, stepWeapon, fire } from './weapon.js';
 import { nearestBin, kickBin } from './bin.js';
+import { nearestCrate, openCrate } from './loot.js';
 
 export function makeBots(state, count) {
   const bots = [];
@@ -50,10 +51,12 @@ export function makeBots(state, count) {
       onGround: false,
       weapon: makeWeapon(),                       // shared slime cooldown
       weaponSlots: [makeWeapon(), makeWeapon()],  // [0] veggie, [1] junk
+      guns: [false, false],                       // lands unarmed, loots crates
       slot: 0,
       ai: {
         tx: 0, tz: 0, think: 0, fireAt: rand(state) * 2,
         strafe: 1, strafeT: 0, stuckT: 0, lastX: 0, lastZ: 0,
+        detour: null,   // wall between me and the crate? sidestep here first
       },
     };
     pickWanderTarget(bot, state);
@@ -171,7 +174,10 @@ export function stepBot(bot, state, dt) {
     const dd = distXZ(bot.pos, target.pos);
     engaged = dd < cfg.aggroRange;
     bot.yaw = Math.atan2(target.pos.x - bot.pos.x, target.pos.z - bot.pos.z);
-    bot.slot = dd < cfg.junkRange ? 1 : 0;   // up close: junk shotgun
+    // pick an OWNED gun: junk shotgun up close, veggie launcher else
+    if (bot.guns[1] && dd < cfg.junkRange) bot.slot = 1;
+    else if (bot.guns[0]) bot.slot = 0;
+    else if (bot.guns[1]) bot.slot = 1;
     if (bot.ai.fireAt <= 0 && dd < cfg.fireRange) {
       fire(state, bot, aimAt(bot, target, state));
       bot.ai.fireAt = randRange(state, cfg.fireInterval[0], cfg.fireInterval[1]);
@@ -195,6 +201,23 @@ export function stepBot(bot, state, dt) {
         want = { x: bot.pos.x + (mx / ml) * 5, z: bot.pos.z + (mz / ml) * 5 };
       }
     }
+  }
+
+  // unarmed? forget the fight — run for the nearest crate and loot it
+  if (!bot.guns[0] && !bot.guns[1]) {
+    const c = nearestCrate(state, bot, CONFIG.loot.botLootRange);
+    if (c) {
+      if (distXZ(bot.pos, c.pos) <= CONFIG.loot.openRange) {
+        openCrate(state, bot, c);
+        bot.ai.detour = null;
+      } else {
+        const d = bot.ai.detour;
+        if (d && distXZ(bot.pos, d) <= 1.6) bot.ai.detour = null;
+        want = bot.ai.detour || { x: c.pos.x, z: c.pos.z };
+      }
+    }
+  } else {
+    bot.ai.detour = null;
   }
 
   // the shrinking wall outranks everything — leg it back inside
@@ -230,8 +253,22 @@ export function stepBot(bot, state, dt) {
       bot.onGround = false;
     }
     if (bot.ai.stuckT > 1.2) {
-      pickWanderTarget(bot, state);
-      bot.ai.strafe = -bot.ai.strafe;
+      if (!bot.guns[0] && !bot.guns[1] && want && !bot.ai.detour) {
+        // wall between me and the crate — sidestep to a detour point
+        const px = -(want.z - bot.pos.z);
+        const pz = want.x - bot.pos.x;
+        const pl = Math.hypot(px, pz) || 1;
+        const side = rand(state) < 0.5 ? 1 : -1;
+        const off = 6 + rand(state) * 10;
+        bot.ai.detour = {
+          x: (bot.pos.x + want.x) / 2 + (px / pl) * off * side,
+          z: (bot.pos.z + want.z) / 2 + (pz / pl) * off * side,
+        };
+      } else {
+        bot.ai.detour = null;
+        pickWanderTarget(bot, state);
+        bot.ai.strafe = -bot.ai.strafe;
+      }
       bot.ai.stuckT = 0;
     }
   } else {

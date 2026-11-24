@@ -68,6 +68,14 @@ export const CONFIG = {
     order: ['toaster', 'coffeemaker', 'fork', 'spoon'],
   },
   weaponSlots: 2,
+  // Weapon crates: everyone drops unarmed, guns come from loot boxes.
+  loot: {
+    crates: 14,         // crates scattered around the map at match start
+    openRange: 2.4,     // E distance to pop the lid
+    botLootRange: 300,  // an unarmed bot walks to a crate within this range
+    consolationHp: 12,  // already own the rolled gun? heal instead
+    vegOdds: 0.6,       // chance the crate holds the veggie launcher
+  },
   // Junk-binned victims turn into a BIG TOASTER instead of a veggie bin.
   // Kicking it pops out toast slices — pickups that heal whoever grabs
   // them. The kick itself still scores the kill as usual.
