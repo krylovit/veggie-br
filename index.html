@@ -33,6 +33,31 @@
   #hpfill { height: 100%; width: 100%; background: #4fd35a;
     transition: width .12s, background .3s; }
   #hptext { font-size: 13px; margin-top: 4px; }
+  /* veggie meter — pips fill as produce sticks to you, bin at full */
+  #vegbar { display: flex; gap: 3px; margin-top: 5px; }
+  #vegbar .pip { flex: 1; height: 8px; border-radius: 3px;
+    background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.2); }
+  #vegbar .pip.on { background: #8fc94f; border-color: #b6e68a; }
+  #vegbar .pip.on.hot { background: #e23b2e; border-color: #ff9078;
+    animation: vegpulse .5s infinite alternate; }
+  #vegbar.hidden { visibility: hidden; }
+  @keyframes vegpulse { from { filter: brightness(1); } to { filter: brightness(1.7); } }
+  #veglabel { font-size: 11px; color: #ffb3a3; margin-top: 2px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+  /* floating damage/heal numbers near the crosshair */
+  .fct { position: fixed; z-index: 12; font-size: 21px; font-weight: 800;
+    pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+    animation: fctfloat 1s ease-out forwards; }
+  .fct.dmg { color: #ff6a5e; }
+  .fct.heal { color: #7cf58a; }
+  @keyframes fctfloat {
+    0% { opacity: 0; transform: translateY(8px) scale(.8); }
+    15% { opacity: 1; transform: translateY(0) scale(1.1); }
+    100% { opacity: 0; transform: translateY(-46px) scale(1); }
+  }
+  #healflash { position: fixed; inset: 0; z-index: 9; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(60,255,110,.4) 100%);
+    opacity: 0; transition: opacity .35s; }
 
   #veggies { left: 50%; bottom: 18px; transform: translateX(-50%);
     display: flex; gap: 10px; }
@@ -119,7 +144,8 @@
   <div id="hitmark" class="hud"></div>
   <div id="stats" class="hud"><b id="alive"></b><br /><span id="zoneline"></span><br /><span id="kills"></span></div>
   <div id="feed" class="hud"></div>
-  <div id="hpwrap" class="hud"><div id="hpbar"><div id="hpfill"></div></div><div id="hptext"></div></div>
+  <div id="hpwrap" class="hud"><div id="hpbar"><div id="hpfill"></div></div><div id="vegbar"></div><div id="veglabel"></div><div id="hptext"></div></div>
+  <div id="healflash"></div>
   <div id="veggies" class="hud"></div>
   <div id="help" class="hud">WASD — бег · Shift — ускорение · Space — прыжок<br />ЛКМ — выстрел · 10 прилипаний = бак! · E — пнуть бак / ящик / кнопка · R — заново<br />1/2 · колесо — оружие</div>
   <div id="kickhint" class="hud" style="left:50%;top:62%;transform:translateX(-50%);

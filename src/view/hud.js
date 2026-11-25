@@ -25,6 +25,28 @@ export function createHud() {
     setTimeout(() => line.remove(), 6000);
   };
 
+  // veggie meter pips — one per bin-hit point, hot-pulsing when close
+  const vegbar = $('vegbar');
+  const pips = [];
+  for (let i = 0; i < CONFIG.bin.hits; i++) {
+    const pip = document.createElement('div');
+    pip.className = 'pip';
+    vegbar.appendChild(pip);
+    pips.push(pip);
+  }
+
+  // floating combat text near the crosshair: red damage, green heals
+  const fct = (text, kind) => {
+    const el = document.createElement('div');
+    el.className = `fct ${kind}`;
+    el.textContent = text;
+    el.style.left = `calc(50% + ${20 + Math.random() * 40}px)`;
+    el.style.top = `calc(50% + ${30 + Math.random() * 30}px)`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1000);
+  };
+  let healFlashT = 0;
+
   let flashT = 0;
   let hitT = 0;
 
@@ -56,10 +78,22 @@ export function createHud() {
         Math.hypot(p.pos.x - state.zone.cx, p.pos.z - state.zone.cz) > state.zone.radius;
       $('zoneflash').style.opacity = outside ? 1 : 0;
 
+      // veggie coating meter: pips fill as produce sticks — full = bin
+      const vc = Math.min(p.vegCount || 0, CONFIG.bin.hits);
+      const hot = vc >= CONFIG.bin.hits - 3;
+      pips.forEach((pip, i) => {
+        pip.className = 'pip' + (i < vc ? (hot ? ' on hot' : ' on') : '');
+      });
+      vegbar.classList.toggle('hidden', vc === 0 && !p.binned);
+      $('veglabel').textContent = p.binned
+        ? 'ВЫ — БАК!'
+        : vc > 0
+          ? (hot ? `овощей на вас ${vc}/${CONFIG.bin.hits} — ЕЩЁ ЧУТЬ-ЧУТЬ И БАК!`
+                 : `овощей на вас ${vc}/${CONFIG.bin.hits}`)
+          : '';
+
       // veggie coating + kick prompt
-      $('hptext').textContent = p.vegCount > 0
-        ? `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp} · овощей на вас: ${p.vegCount}/${CONFIG.bin.hits}`
-        : `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp}`;
+      $('hptext').textContent = `HP ${Math.ceil(Math.max(0, p.hp))} / ${CONFIG.player.maxHp}`;
       let nearBin = false;
       if (p.alive && !p.binned && !p.onBalcony && !p.zombie) {
         for (const b of state.humans.concat(state.bots)) {
@@ -102,6 +136,10 @@ export function createHud() {
         flashT -= 0.016;
         if (flashT <= 0) $('dmgflash').style.opacity = 0;
       }
+      if (healFlashT > 0) {
+        healFlashT -= 0.016;
+        if (healFlashT <= 0) $('healflash').style.opacity = 0;
+      }
       if (hitT > 0) {
         hitT -= 0.016;
         if (hitT <= 0) $('hitmark').style.opacity = 0;
@@ -143,6 +181,8 @@ export function createHud() {
       if (e.type === 'hit' && e.target === 'player') {
         $('dmgflash').style.opacity = 1;
         flashT = 0.35;
+        const weight = CONFIG.junk.order.includes(e.veggie) ? 2 : 1;
+        fct(`-${weight * CONFIG.bin.hitDmg} HP`, 'dmg');
       } else if (e.type === 'hit' && e.byPlayer) {
         $('hitmark').style.opacity = 1;
         hitT = 0.5;
@@ -167,8 +207,18 @@ export function createHud() {
         feed(e.byPlayer
           ? (e.healed > 0 ? `Ящик: та же пушка — +${e.healed} HP` : `Вы нашли ${gun}!`)
           : `${e.name} нашёл ${gun.toLowerCase()}`);
+        if (e.byPlayer && e.healed > 0) {
+          fct(`+${e.healed} HP`, 'heal');
+          $('healflash').style.opacity = 1;
+          healFlashT = 0.4;
+        }
       } else if (e.type === 'heal') {
-        if (e.target === 'player') feed(`тост +${e.amount} HP`);
+        if (e.target === 'player') {
+          feed(`тост +${e.amount} HP`);
+          fct(`+${e.amount} HP`, 'heal');
+          $('healflash').style.opacity = 1;
+          healFlashT = 0.4;
+        }
       } else if (e.type === 'toBalcony') {
         feed(e.target === 'player'
           ? `Вы на балконе — жизней осталось: ${e.lives}`
