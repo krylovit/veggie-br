@@ -173,6 +173,13 @@ const asphaltTex = canvasTex((g, S) => {
   g.fillStyle = '#e8c83c';                            // dashed centre line
   for (let u = 0; u < S; u += 32) g.fillRect(u, S / 2 - 2, 16, 4);
 });
+const asphaltPlainTex = canvasTex((g, S) => {
+  g.fillStyle = '#4a4a4e'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = Math.random() < 0.5 ? '#434348' : '#505056';
+    g.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+});
 const dirtTex = canvasTex((g, S) => {
   g.fillStyle = '#7a5c3a'; g.fillRect(0, 0, S, S);
   for (let i = 0; i < 500; i++) {
@@ -217,6 +224,76 @@ function distToLine(x, z, pts) {
   return best;
 }
 
+// 2D segment intersection — crossing point or null
+function segInt(ax, az, bx, bz, cx, cz, dx, dz) {
+  const d = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx);
+  if (Math.abs(d) < 1e-9) return null;
+  const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / d;
+  const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / d;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: ax + (bx - ax) * t, z: az + (bz - az) * t };
+}
+// every crossing of asphalt centrelines, clustered. Works on the
+// dense SMOOTHED sample lines — control polylines deviate metres from
+// the real ribbon on curves, which would misplace the aprons.
+function findCrossings(roads, lines) {
+  const hits = [];
+  const asph = roads.map((r, i) => ({ r, i })).filter((o) => o.r.kind !== 'dirt');
+  const segBox = (x0, z0, x1, z1) => [Math.min(x0, x1), Math.max(x0, x1), Math.min(z0, z1), Math.max(z0, z1)];
+  for (let a = 0; a < asph.length; a++)
+    for (let b = a + 1; b < asph.length; b++) {
+      const A = lines[asph[a].i], B = lines[asph[b].i];
+      // coarse pass: test every ~8th sample segment first for proximity
+      for (let i = 0; i < A.length - 1; i += 4) {
+        const i1 = Math.min(i + 4, A.length - 1);
+        const ba = segBox(A[i].x, A[i].z, A[i1].x, A[i1].z);
+        for (let j = 0; j < B.length - 1; j += 4) {
+          const j1 = Math.min(j + 4, B.length - 1);
+          const bb = segBox(B[j].x, B[j].z, B[j1].x, B[j1].z);
+          if (ba[1] < bb[0] - 8 || bb[1] < ba[0] - 8 || ba[3] < bb[2] - 8 || bb[3] < ba[2] - 8) continue;
+          // boxes overlap: fine pass over the small segments
+          for (let ii = i; ii < i1; ii++)
+            for (let jj = j; jj < j1; jj++) {
+              const p = segInt(A[ii].x, A[ii].z, A[ii + 1].x, A[ii + 1].z, B[jj].x, B[jj].z, B[jj + 1].x, B[jj + 1].z);
+              if (p) { p.w = Math.max(asph[a].r.width, asph[b].r.width); hits.push(p); }
+            }
+        }
+      }
+    }
+  const clusters = [];
+  for (const h of hits) {
+    const c = clusters.find((c) => Math.hypot(c.x - h.x, c.z - h.z) < 6);
+    if (c) { c.x = (c.x * c.n + h.x) / (c.n + 1); c.z = (c.z * c.n + h.z) / (c.n + 1); c.n++; c.w = Math.max(c.w, h.w); }
+    else clusters.push({ x: h.x, z: h.z, n: 1, w: h.w });
+  }
+  return clusters;
+}
+// junction apron: a superellipse 'rounded square' of plain asphalt laid
+// over the overlap — lane dashes vanish beneath it, corners read as
+// proper intersection fillets
+function apronGeo(cx, cz, R, heightAt, y) {
+  const SEG = 24, pos = [], uv = [], idx = [];
+  pos.push(cx, heightAt(cx, cz) + y, cz);
+  uv.push(0.5, 0.5);
+  for (let i = 0; i <= SEG; i++) {
+    const t = (i / SEG) * Math.PI * 2;
+    const c = Math.cos(t), s = Math.sin(t);
+    // superellipse n=4: rounded square, diagonal bulge covers the fillets
+    const ex = Math.sign(c) * Math.pow(Math.abs(c), 0.25);   // n=8: square-ish, rounded corners
+    const ez = Math.sign(s) * Math.pow(Math.abs(s), 0.25);
+    const x = cx + ex * R, z = cz + ez * R;
+    pos.push(x, heightAt(x, z) + y, z);
+    uv.push(ex * 0.5 + 0.5, ez * 0.5 + 0.5);
+    if (i) idx.push(0, i + 1, i);   // wound so normals face UP
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 function buildRoadNet(state, group) {
   const heightAt = state.heightAt;
   // guardrails break where corridors cross each other (junctions, the
@@ -231,9 +308,11 @@ function buildRoadNet(state, group) {
   const postGeo = new THREE.BoxGeometry(0.18, 0.75, 0.18);
   const railGeo = new THREE.BoxGeometry(0.08, 0.28, 1);
   const posts = [], rails = [];
+  const smoothLines = [];
   state.roads.forEach((r, ri) => {
     const smooth = chaikin(r.pts, r.pts.length > 2 ? 3 : 0);
     const samples = sampleLine(smooth, 1.6);
+    smoothLines[ri] = samples;
     const mesh = new THREE.Mesh(
       stripGeo(samples, r.width, 0.055 + ri * 0.004, heightAt),
       roadMats[r.kind] || roadMats.asphalt);
@@ -280,6 +359,14 @@ function buildRoadNet(state, group) {
     irm.castShadow = true;
     group.add(irm);
   }
+  // junction aprons over every asphalt crossing
+  const apronMat = new THREE.MeshStandardMaterial({ map: asphaltPlainTex, roughness: 0.95, side: THREE.DoubleSide });
+  for (const x of findCrossings(state.roads, smoothLines)) {
+    const m = new THREE.Mesh(apronGeo(x.x, x.z, x.w / 2 + 3.2, heightAt, 0.14), apronMat);
+    m.receiveShadow = true;
+    group.add(m);
+  }
+
   // railway: ballast bed + sleepers + twin steel rails
   const rl = state.railLine;
   if (rl) {
