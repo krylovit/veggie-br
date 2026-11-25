@@ -91,6 +91,243 @@ for (const [k, t] of Object.entries(TEX)) {
   MATS[k] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 });
 }
 
+// ---- spline roads & railway -------------------------------------------
+// Roads and the railway are smooth mesh strips laid along Chaikin-smoothed
+// centrelines — no voxel cubes. Asphalt carries lane markings baked into a
+// repeating canvas texture; 'guard' roads get posts + rails in open country.
+function chaikin(pts, iters) {
+  let cur = pts.map((p) => ({ x: p[0], z: p[1] }));
+  for (let n = 0; n < iters; n++) {
+    const out = [cur[0]];
+    for (let i = 0; i < cur.length - 1; i++) {
+      const a = cur[i], b = cur[i + 1];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
+    }
+    out.push(cur[cur.length - 1]);
+    cur = out;
+  }
+  return cur;
+}
+// dense resample: positions + arclength + direction per sample
+function sampleLine(pts, step) {
+  const out = [];
+  let s = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const n = Math.max(1, Math.round(len / step));
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      out.push({
+        x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t,
+        dx: (b.x - a.x) / len, dz: (b.z - a.z) / len, s: s + len * t,
+      });
+    }
+    s += len;
+  }
+  const last = pts[pts.length - 1], prev = out[out.length - 1];
+  out.push({ x: last.x, z: last.z, dx: prev.dx, dz: prev.dz, s });
+  return out;
+}
+// flat ribbon following the terrain; u runs along arclength
+function stripGeo(samples, width, yOff, heightAt) {
+  const pos = [], uv = [], idx = [];
+  const hw = width / 2;
+  samples.forEach((p, i) => {
+    const px = -p.dz, pz = p.dx;                     // left perpendicular
+    for (const side of [1, -1]) {
+      const x = p.x + px * hw * side, z = p.z + pz * hw * side;
+      pos.push(x, heightAt(x, z) + yOff, z);
+      uv.push(p.s / 6, side * 0.5 + 0.5);
+    }
+    if (i) {
+      const b = i * 2;
+      idx.push(b - 2, b, b - 1, b, b + 1, b - 1);
+    }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+function canvasTex(draw, size = 128) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const asphaltTex = canvasTex((g, S) => {
+  g.fillStyle = '#4a4a4e'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = Math.random() < 0.5 ? '#434348' : '#505056';
+    g.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  g.fillStyle = '#e8e8e0';                            // edge lines
+  g.fillRect(0, 3, S, 3); g.fillRect(0, S - 6, S, 3);
+  g.fillStyle = '#e8c83c';                            // dashed centre line
+  for (let u = 0; u < S; u += 32) g.fillRect(u, S / 2 - 2, 16, 4);
+});
+const dirtTex = canvasTex((g, S) => {
+  g.fillStyle = '#7a5c3a'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = Math.random() < 0.5 ? '#6e5233' : '#866542';
+    g.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  g.fillStyle = '#5d4529';                            // wheel ruts
+  g.fillRect(0, S * 0.28, S, 5); g.fillRect(0, S * 0.68, S, 5);
+});
+const ballastTex = canvasTex((g, S) => {
+  g.fillStyle = '#6b655c'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 700; i++) {
+    g.fillStyle = ['#5c564e', '#7a746b', '#544e46'][i % 3];
+    g.fillRect(Math.random() * S, Math.random() * S, 3, 2);
+  }
+});
+const roadMats = {
+  asphalt: new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.95 }),
+  dirt: new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1 }),
+};
+const ballastMat = new THREE.MeshStandardMaterial({ map: ballastTex, roughness: 1 });
+const railSteelMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.35, metalness: 0.8 });
+const guardMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.4, metalness: 0.7 });
+const sleeperMat = new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 1 });
+// sectors where guardrails must not wall off the streets/gates
+const SECTOR_RECTS = [
+  { x0: -182, x1: -2, z0: -90, z1: 90 },     // city
+  { x0: 2, x1: 182, z0: -90, z1: 90 },       // farm
+  { x0: -42, x1: 40, z0: -177, z1: -95 },    // park
+];
+const inSectorRect = (x, z) =>
+  SECTOR_RECTS.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+
+function distToLine(x, z, pts) {
+  let best = 999;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    const dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+    best = Math.min(best, Math.hypot(x - (ax + dx * t), z - (az + dz * t)));
+  }
+  return best;
+}
+
+function buildRoadNet(state, group) {
+  const heightAt = state.heightAt;
+  // guardrails break where corridors cross each other (junctions, the
+  // level crossing) — never strap a rail across a through-route
+  const nearOtherCorridor = (x, z, selfIdx) => {
+    for (let j = 0; j < state.roads.length; j++) {
+      if (j === selfIdx) continue;
+      if (distToLine(x, z, state.roads[j].pts) < state.roads[j].width / 2 + 4.5) return true;
+    }
+    return state.railLine && distToLine(x, z, state.railLine.pts) < 8;
+  };
+  const postGeo = new THREE.BoxGeometry(0.18, 0.75, 0.18);
+  const railGeo = new THREE.BoxGeometry(0.08, 0.28, 1);
+  const posts = [], rails = [];
+  state.roads.forEach((r, ri) => {
+    const smooth = chaikin(r.pts, r.pts.length > 2 ? 3 : 0);
+    const samples = sampleLine(smooth, 1.6);
+    const mesh = new THREE.Mesh(
+      stripGeo(samples, r.width, 0.055 + ri * 0.004, heightAt),
+      roadMats[r.kind] || roadMats.asphalt);
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    if (!r.guard) return;
+    // guardrails: posts every ~4.8 m + continuous rail ribbons on both
+    // edges, but only through open country (never across streets/gates)
+    for (const side of [-1, 1]) {
+      let prev = null;
+      samples.forEach((p, i) => {
+        if (i % 3) return;
+        const px = -p.dz, pz = p.dx;
+        const x = p.x + px * (r.width / 2 + 0.55) * side;
+        const z = p.z + pz * (r.width / 2 + 0.55) * side;
+        if (inSectorRect(x, z) || nearOtherCorridor(x, z, ri)) { prev = null; return; }
+        const y = heightAt(x, z);
+        posts.push({ x, y: y + 0.37, z });
+        if (prev) {
+          rails.push({
+            x: (x + prev.x) / 2, y: (y + prev.y) / 2 + 0.62, z: (z + prev.z) / 2,
+            yaw: Math.atan2(x - prev.x, z - prev.z),
+            len: Math.hypot(x - prev.x, z - prev.z) + 0.1,
+          });
+        }
+        prev = { x, z, y };
+      });
+    }
+  });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  const pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  if (posts.length) {
+    const im = new THREE.InstancedMesh(postGeo, guardMat, posts.length);
+    posts.forEach((p, i) => im.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
+    im.castShadow = true;
+    group.add(im);
+    const irm = new THREE.InstancedMesh(railGeo, guardMat, rails.length);
+    rails.forEach((p, i) => {
+      q.setFromAxisAngle(up, p.yaw);
+      pos.set(p.x, p.y, p.z);
+      m4.compose(pos, q, new THREE.Vector3(1, 1, p.len));
+      irm.setMatrixAt(i, m4);
+    });
+    irm.castShadow = true;
+    group.add(irm);
+  }
+  // railway: ballast bed + sleepers + twin steel rails
+  const rl = state.railLine;
+  if (rl) {
+    const smooth = chaikin(rl.pts, 3);
+    const samples = sampleLine(smooth, 1.2);
+    const bed = new THREE.Mesh(stripGeo(samples, rl.width, 0.04, heightAt), ballastMat);
+    bed.receiveShadow = true;
+    group.add(bed);
+    const sleeperGeo = new THREE.BoxGeometry(2.3, 0.12, 0.5);
+    const sim = new THREE.InstancedMesh(sleeperGeo, sleeperMat, samples.length);
+    samples.forEach((p, i) => {
+      q.setFromAxisAngle(up, Math.atan2(p.dx, p.dz));
+      pos.set(p.x, heightAt(p.x, p.z) + 0.12, p.z);
+      m4.compose(pos, q, one);
+      sim.setMatrixAt(i, m4);
+    });
+    sim.castShadow = true;
+    sim.receiveShadow = true;
+    group.add(sim);
+    // rails: thin steel boxes per segment, two per segment at +/-0.75 m
+    const railSegGeo = new THREE.BoxGeometry(0.09, 0.16, 1);
+    const segs = [];
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i], b = samples[i + 1];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      if (!len) continue;
+      const yaw = Math.atan2(b.x - a.x, b.z - a.z);
+      const px = -((b.z - a.z) / len), pz = (b.x - a.x) / len;
+      for (const side of [-0.75, 0.75]) {
+        segs.push({
+          x: (a.x + b.x) / 2 + px * side, z: (a.z + b.z) / 2 + pz * side,
+          yaw, len: len + 0.06,
+          y: (heightAt(a.x + px * side, a.z + pz * side) + heightAt(b.x + px * side, b.z + pz * side)) / 2 + 0.28,
+        });
+      }
+    }
+    const rim = new THREE.InstancedMesh(railSegGeo, railSteelMat, segs.length);
+    segs.forEach((p, i) => {
+      q.setFromAxisAngle(up, p.yaw);
+      pos.set(p.x, p.y, p.z);
+      m4.compose(pos, q, new THREE.Vector3(1, 1, p.len));
+      rim.setMatrixAt(i, m4);
+    });
+    rim.castShadow = true;
+    group.add(rim);
+  }
+}
+
 // Recognizable veggies — every mesh flies business-end first (+Z after orient).
 function makeVeggieMesh(type) {
   const g = new THREE.Group();
@@ -525,6 +762,7 @@ export function createView(container) {
 
   const voxelGeo = new THREE.BoxGeometry(1, 1, 1);
   let voxelMeshes = [];
+  let roadGroup = null;
   const tmpM4 = new THREE.Matrix4();
 
   const capGeo = new THREE.CapsuleGeometry(
@@ -1387,6 +1625,10 @@ export function createView(container) {
       effects.length = 0;
       for (const m of voxelMeshes) scene.remove(m);
       voxelMeshes = [];
+      if (roadGroup) { scene.remove(roadGroup); roadGroup.traverse((o) => o.geometry && o.geometry.dispose && o.geometry.dispose()); }
+      roadGroup = new THREE.Group();
+      if (state.roads) buildRoadNet(state, roadGroup);
+      scene.add(roadGroup);
       const byMat = {};
       for (const v of state.voxels) (byMat[v.mat] ??= []).push(v);
       for (const [mkey, list] of Object.entries(byMat)) {

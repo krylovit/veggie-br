@@ -43,6 +43,10 @@ export function buildMap(state) {
       m *= Math.min(1, Math.max(0, (pd - 52) / 15));        // flat park
     }
     const edge = Math.min(1, Math.max(0, (186 - Math.max(Math.abs(x), az)) / 8));
+    const gx = Math.min(GW - 1, Math.max(0, Math.floor((x + 192) / GCELL)));
+    const gz = Math.min(GW - 1, Math.max(0, Math.floor((z + 192) / GCELL)));
+    const rd = flatD[gz * GW + gx];                          // dist to nearest corridor
+    if (rd < 13) m *= Math.min(1, Math.max(0, (rd - 6.5) / 5.5));
     return rawH(x, z) * m * edge;                            // ~±2 m in the wilds
   };
 
@@ -67,6 +71,52 @@ export function buildMap(state) {
   const paveRect = (x0, z0, x1, z1, mat) => {
     for (let x = x0; x < x1; x++)
       for (let z = z0; z < z1; z++) pave(x, z, mat);
+  };
+
+  // ---- road & rail network ------------------------------------------
+  // Roads and the railway are spline strips (smooth meshes in the view),
+  // NOT voxel paving: each entry is a centerline polyline + width.
+  // 'guard' roads get metal guardrails where they cross open country.
+  const roads = [];
+  const road = (pts, width, kind, guard) =>
+    roads.push({ pts, width, kind: kind || 'asphalt', guard: !!guard });
+  // East-west artery — straight through both sector centres.
+  road([[-188, 0], [188, 0]], 7, 'asphalt');
+  // North-south connector: straight through the park gates, then a
+  // lazy S-curve across the south grassland.
+  road([[5.5, -186], [5.5, 96], [1.5, 122], [7.5, 152], [4.5, 186]], 6, 'asphalt', true);
+  // South ring road: a long sweeping arc through the wild south,
+  // crossing the connector — proper curves and a proper crossroads.
+  road([[-186, 105], [-130, 125], [-60, 140], [0, 145], [60, 140], [130, 125], [186, 105]], 6.5, 'asphalt', true);
+  // Railway: its own curving arc further south, crossing the connector
+  // at a level crossing. Ballast + sleepers + rails, all spline-laid.
+  const railLine = {
+    pts: [[-186, 155], [-130, 168], [-70, 172], [-10, 165], [50, 172], [110, 168], [160, 158], [186, 152]],
+    width: 4.5,
+  };
+
+  // Terrain stays flat along every corridor: rasterize centrelines into
+  // a coarse min-distance grid that heightAt fades relief out with.
+  const GW = 96, GCELL = 4;
+  const flatD = new Float32Array(GW * GW).fill(999);
+  const rasterLine = (pts) => {
+    const r = 16;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const len = Math.hypot(bx - ax, bz - az), steps = Math.max(1, Math.ceil(len / 1.5));
+      for (let s = 0; s <= steps; s++) {
+        const x = ax + ((bx - ax) * s) / steps, z = az + ((bz - az) * s) / steps;
+        const cx0 = Math.floor((x - r + 192) / GCELL), cx1 = Math.floor((x + r + 192) / GCELL);
+        const cz0 = Math.floor((z - r + 192) / GCELL), cz1 = Math.floor((z + r + 192) / GCELL);
+        for (let gz = cz0; gz <= cz1; gz++)
+          for (let gx = cx0; gx <= cx1; gx++) {
+            if (gx < 0 || gz < 0 || gx >= GW || gz >= GW) continue;
+            const d = Math.hypot(gx * GCELL - 192 + 2 - x, gz * GCELL - 192 + 2 - z);
+            const gi = gz * GW + gx;
+            if (d < flatD[gi]) flatD[gi] = d;
+          }
+      }
+    }
   };
 
   // ---- piece parts --------------------------------------------------
@@ -242,8 +292,6 @@ export function buildMap(state) {
   // ---- highways -----------------------------------------------------
   // East-west artery through both sector centres + a north-south
   // connector in the gap — roads run THROUGH the sectors.
-  paveRect(-188, -3, 188, 3, 'path');                     // EW highway
-  paveRect(3, -186, 8, 186, 'path');                      // NS connector
   // Monument to the Great Toaster on the crossroads island.
   box(4, 0, 4, 7, 1, 7, 'stone');
   box(5, 1, 5, 6, 4, 6, 'bin');
@@ -253,8 +301,8 @@ export function buildMap(state) {
   const city = (cx, cz) => {
     const streetC = [-58, -29, 0, 29, 58];
     for (const c of streetC) {
-      paveRect(cx + c - 2, cz - 90, cx + c + 3, cz + 90, 'path');  // N-S
-      paveRect(cx - 90, cz + c - 2, cx + 90, cz + c + 3, 'path');  // E-W
+      road([[cx + c + 0.5, cz - 90], [cx + c + 0.5, cz + 90]], 5);   // N-S
+      road([[cx - 90, cz + c + 0.5], [cx + 90, cz + c + 0.5]], 5);   // E-W
     }
     // plaza: pavement circle, kerb ring, lamps, benches, planters
     const PR = 13;
@@ -318,9 +366,9 @@ export function buildMap(state) {
   // ---- farm sector --------------------------------------------------
   const farm = (cx, cz) => {
     // dirt tracks: the EW highway is the spine; two lanes feed parcels
-    paveRect(cx - 70, cz - 62, cx - 64, cz + 70, 'dirt');
-    paveRect(cx + 40, cz - 62, cx + 46, cz + 70, 'dirt');
-    paveRect(cx - 70, cz + 52, cx + 46, cz + 58, 'dirt');
+    road([[cx - 67, cz - 62], [cx - 67, cz + 70]], 6, 'dirt');
+    road([[cx + 43, cz - 62], [cx + 43, cz + 70]], 6, 'dirt');
+    road([[cx - 67, cz + 55], [cx + 43, cz + 55]], 6, 'dirt');
     // wheat fields north of the highway
     field(cx - 62, cz - 68, cx - 20, cz - 22);
     field(cx - 12, cz - 68, cx + 32, cz - 22);
@@ -430,12 +478,24 @@ export function buildMap(state) {
   }
 
   // Forest belt around the whole map edge — the world ends in woods.
+  // Trees keep clear of every road/rail corridor.
+  const nearLine = (x, z, pts, r) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const dx = bx - ax, dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) < r) return true;
+    }
+    return false;
+  };
+  const nearCorridor = (x, z) =>
+    roads.some((r) => nearLine(x, z, r.pts, r.width / 2 + 3.5)) || nearLine(x, z, railLine.pts, 5.5);
   const inPark = (x, z) => x > -48 && x < 46 && z > -181 && z < -88;
   for (let i = 0; i < 260; i++) {
     const x = Math.round((rand(state) * 2 - 1) * 186);
     const z = Math.round((rand(state) * 2 - 1) * 186);
     const inSectors = z > -92 && z < 92 && x > -186 && x < 186;
-    if (inSectors || inPark(x, z)) continue;
+    if (inSectors || inPark(x, z) || nearCorridor(x, z)) continue;
     tree(x, z);
   }
   // a few trees scattered through the sectors too — not inside the park
@@ -444,9 +504,11 @@ export function buildMap(state) {
     const a = rand(state) * Math.PI * 2;
     const r = 40 + rand(state) * 50;
     const tx = Math.round(s.x + Math.cos(a) * r), tz = Math.round(s.z + Math.sin(a) * r);
-    if (inPark(tx, tz)) continue;
+    if (inPark(tx, tz) || nearCorridor(tx, tz)) continue;
     tree(tx, tz);
   }
 
-  return { obstacles, voxels, lootSpots, heightAt, windmill, ferris };
+  for (const r of roads) rasterLine(r.pts);
+  rasterLine(railLine.pts);
+  return { obstacles, voxels, lootSpots, heightAt, windmill, ferris, roads, railLine };
 }
