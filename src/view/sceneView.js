@@ -296,6 +296,8 @@ function apronGeo(cx, cz, R, heightAt, y) {
 
 function buildRoadNet(state, group) {
   const heightAt = state.heightAt;
+  const deckAt = state.deckAt || (() => 0);
+  const roadFloor = (x, z) => Math.max(heightAt(x, z), deckAt(x, z));
   // guardrails break where corridors cross each other (junctions, the
   // level crossing) — never strap a rail across a through-route
   const nearOtherCorridor = (x, z, selfIdx) => {
@@ -314,7 +316,7 @@ function buildRoadNet(state, group) {
     const samples = sampleLine(smooth, 1.6);
     smoothLines[ri] = samples;
     const mesh = new THREE.Mesh(
-      stripGeo(samples, r.width, 0.055 + ri * 0.004, heightAt),
+      stripGeo(samples, r.width, 0.055 + ri * 0.004, roadFloor),
       roadMats[r.kind] || roadMats.asphalt);
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -329,7 +331,7 @@ function buildRoadNet(state, group) {
         const x = p.x + px * (r.width / 2 + 0.55) * side;
         const z = p.z + pz * (r.width / 2 + 0.55) * side;
         if (inSectorRect(x, z) || nearOtherCorridor(x, z, ri)) { prev = null; return; }
-        const y = heightAt(x, z);
+        const y = roadFloor(x, z);
         posts.push({ x, y: y + 0.37, z });
         if (prev) {
           rails.push({
@@ -365,6 +367,35 @@ function buildRoadNet(state, group) {
     const m = new THREE.Mesh(apronGeo(x.x, x.z, x.w / 2 + 3.2, heightAt, 0.14), apronMat);
     m.receiveShadow = true;
     group.add(m);
+  }
+
+  // ---- overpass across the rail cutting --------------------------------
+  // Deck slab + parapets + abutment walls. The embankment ramps are
+  // terrain; this mesh is the span itself.
+  const br = state.bridge;
+  if (br && br.cx) {
+    const conc = new THREE.MeshStandardMaterial({ color: 0x9c9890, roughness: 0.9 });
+    const yaw = Math.atan2(br.ax, br.az);
+    const spanLen = (br.span + 1.5) * 2;
+    const mk = (w, h, l, u, y, v) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), conc);
+      m.position.set(
+        br.cx + br.ax * u - br.az * (v || 0),
+        y,
+        br.cz + br.az * u + br.ax * (v || 0));
+      m.rotation.y = yaw;
+      m.castShadow = m.receiveShadow = true;
+      group.add(m);
+      return m;
+    };
+    // deck slab — top exactly at br.h so the road ribbon rides on it
+    mk(br.width + 1.2, 0.55, spanLen, 0, br.h - 0.275);
+    // parapets along both edges
+    for (const side of [-1, 1])
+      mk(0.3, 1.0, spanLen, 0, br.h + 0.5, side * (br.width / 2 + 0.45));
+    // abutment walls closing the embankment cliffs at both ends
+    for (const side of [-1, 1])
+      mk(br.width + 3.4, br.h + 0.4, 1.2, side * (br.span + 0.9), (br.h + 0.4) / 2 - 0.2);
   }
 
   // railway: ballast bed + sleepers + twin steel rails

@@ -62,6 +62,8 @@ export function createState(opts = {}) {
   state.ferris = map.ferris;         // ferris wheel mount point
   state.roads = map.roads;           // spline road network (mesh strips in the view)
   state.railLine = map.railLine;     // spline railway
+  state.bridge = map.bridge;         // overpass data (view builds the span)
+  state.deckAt = map.deckAt;         // deck height fn — road ribbon rides it
   state.cars = spawnCars(state);
   makeCoaster(state);
   state.bots = makeBots(state, Math.max(0, CONFIG.lobby.slots - state.humans.length));

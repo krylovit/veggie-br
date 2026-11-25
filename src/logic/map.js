@@ -47,7 +47,7 @@ export function buildMap(state) {
     const gz = Math.min(GW - 1, Math.max(0, Math.floor((z + 192) / GCELL)));
     const rd = flatD[gz * GW + gx];                          // dist to nearest corridor
     if (rd < 13) m *= Math.min(1, Math.max(0, (rd - 6.5) / 5.5));
-    return rawH(x, z) * m * edge;                            // ~±2 m in the wilds
+    return rawH(x, z) * m * edge + embankmentAt(x, z);       // relief + bridge ramps
   };
 
   const box = (x0, y0, z0, x1, y1, z1, mat) => {
@@ -87,12 +87,65 @@ export function buildMap(state) {
   road([[5.5, -186], [5.5, 96], [1.5, 122], [7.5, 152], [4.5, 186]], 6, 'asphalt', true);
   // South ring road: a long sweeping arc through the wild south,
   // crossing the connector — proper curves and a proper crossroads.
-  road([[-186, 105], [-130, 125], [-60, 140], [0, 145], [60, 140], [130, 125], [186, 105]], 6.5, 'asphalt', true);
+  road([[-186, 102], [-130, 120], [-60, 132], [0, 136], [60, 132], [130, 120], [186, 102]], 6.5, 'asphalt', true);
   // Railway: its own curving arc further south, crossing the connector
   // at a level crossing. Ballast + sleepers + rails, all spline-laid.
   const railLine = {
     pts: [[-186, 155], [-130, 168], [-70, 172], [-10, 165], [50, 172], [110, 168], [160, 158], [186, 152]],
     width: 4.5,
+  };
+
+  // ---- road bridge over the railway -----------------------------------
+  // The NS connector crosses the rail cutting on an overpass: embankment
+  // ramps rise as terrain, the span itself is a flat deck (collision
+  // boxes + a mesh in the view). Axis = connector direction there.
+  const segInt2 = (ax, az, bx, bz, cx, cz, dx, dz) => {
+    const d = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx);
+    if (Math.abs(d) < 1e-9) return null;
+    const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / d;
+    const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / d;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    return { x: ax + (bx - ax) * t, z: az + (bz - az) * t };
+  };
+  const bridge = { h: 4.2, ramp: 14, span: 8, width: 6.4 };
+  {
+    const conn = roads[1].pts, rp = railLine.pts;
+    for (let i = 0; i < conn.length - 1 && !bridge.cx; i++)
+      for (let j = 0; j < rp.length - 1 && !bridge.cx; j++) {
+        const p = segInt2(conn[i][0], conn[i][1], conn[i + 1][0], conn[i + 1][1], rp[j][0], rp[j][1], rp[j + 1][0], rp[j + 1][1]);
+        if (p) {
+          const dx = conn[i + 1][0] - conn[i][0], dz = conn[i + 1][1] - conn[i][1];
+          const l = Math.hypot(dx, dz);
+          bridge.cx = p.x; bridge.cz = p.z;
+          bridge.ax = dx / l; bridge.az = dz / l;   // axis along the road
+        }
+      }
+  }
+  // signed axial/lateral coords of a point in bridge space
+  const bridgeUV = (x, z) => {
+    const rx = x - bridge.cx, rz = z - bridge.cz;
+    return { u: rx * bridge.ax + rz * bridge.az, v: rx * -bridge.az + rz * bridge.ax };
+  };
+  const smooth01 = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+  // embankment height added to the terrain: ramps at both ends, zero in
+  // the span gap (the rail cutting passes underneath). Falls off laterally.
+  const embankmentAt = (x, z) => {
+    if (!bridge.cx) return 0;
+    const { u, v } = bridgeUV(x, z);
+    const au = Math.abs(u);
+    if (au > bridge.ramp + bridge.span) return 0;
+    const lat = smooth01((7.5 - Math.abs(v)) / 3.5);      // ~8 m wide mound
+    if (lat <= 0) return 0;
+    if (au < bridge.span) return 0;                       // the gap — deck spans it
+    const t = smooth01((bridge.ramp + bridge.span - au) / bridge.ramp);
+    return bridge.h * t * lat;
+  };
+  // deck height where the slab carries the road over the gap
+  const deckAt = (x, z) => {
+    if (!bridge.cx) return 0;
+    const { u, v } = bridgeUV(x, z);
+    if (Math.abs(u) > bridge.span + 1 || Math.abs(v) > bridge.width / 2 + 0.6) return 0;
+    return bridge.h;
   };
 
   // Terrain stays flat along every corridor: rasterize centrelines into
@@ -510,5 +563,18 @@ export function buildMap(state) {
 
   for (const r of roads) rasterLine(r.pts);
   rasterLine(railLine.pts);
-  return { obstacles, voxels, lootSpots, heightAt, windmill, ferris, roads, railLine };
+  // bridge deck collision: a row of flat slabs carrying the span — their
+  // tops are floors in the sweep logic, exactly at embankment height
+  if (bridge.cx) {
+    for (let u = -bridge.span; u < bridge.span; u += 3) {
+      const cx0 = bridge.cx + bridge.ax * (u + 1.5), cz0 = bridge.cz + bridge.az * (u + 1.5);
+      const hw = bridge.width / 2 + 0.4;
+      obstacles.push({
+        min: v3(cx0 - hw, bridge.h - 0.5, cz0 - hw),
+        max: v3(cx0 + hw, bridge.h, cz0 + hw),
+        mat: 'stone',
+      });
+    }
+  }
+  return { obstacles, voxels, lootSpots, heightAt, windmill, ferris, roads, railLine, bridge, deckAt };
 }
